@@ -1,0 +1,41 @@
+{
+    "doxdocgen.generic.paramTemplate": "@param[in] {param} ",
+	"todo-tree.highlights.defaultHighlight": {
+	"icon": "alert",
+	"type": "text",
+	"foreground": "red",
+	"iconColour": "green"
+	},
+	"todo-tree.general.tags": [
+	"?",
+	"!",
+	" Step "
+	],
+	"todo-tree.highlights.customHighlight": {
+	" Step ": {
+	"foreground": "#7CFC00",
+	"icon": "question",
+	"iconColour": "green",
+	"type": "text-and-comment",
+	"hideFromTree": true
+	},
+	"?": {
+	"foreground": "yellow",
+	"icon": "question",
+	"iconColour": "yellow",
+	"type": "text-and-comment"
+	},
+	"!": {
+	"foreground": "red",
+	"icon": "issue-opened",
+	"iconColour": "red",
+	"type": "text-and-comment"
+	}
+	},
+	"todo-tree.general.revealBehaviour": "highlight todo",
+	"todo-tree.tree.showCountsInTree": true,
+	"todo-tree.filtering.excludeGlobs":[
+	"**/*.txt",
+	"**/*.md"
+	]
+}
