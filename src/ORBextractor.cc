@@ -490,18 +490,6 @@ static int bit_pattern_31_[256*4] =
 
 //特征点提取器的构造函数
 
-/**
- * @brief Construct a new ORBextractor::ORBextractor object
- * 
- * 
- * 
- * @param[in] _nfeatures 
- * @param[in] _scaleFactor 
- * @param[in] _nlevels 
- * @param[in] _iniThFAST 
- * @param[in] _minThFAST 
- */
-
 ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
 						   float _scaleFactor,	//指定图像金字塔的缩放系数
 						   int _nlevels,		//指定图像金字塔的层数
@@ -640,8 +628,16 @@ static void computeOrientation(
     }//遍历完成所有的特征点
 }
 
-//将提取器节点分成4个子节点，同时也完成图像区域的划分、特征点归属的划分，以及相关标志位的置位
-void ExtractorNode::DivideNode(ExtractorNode &n1, 	//四个提取节点
+
+/**
+ * @brief 将提取器节点分成4个子节点，同时也完成图像区域的划分、特征点归属的划分，以及相关标志位的置位
+ * 
+ * @param[in & out] n1  提取器节点1：左上
+ * @param[in & out] n2  提取器节点1：右上
+ * @param[in & out] n3  提取器节点1：左下
+ * @param[in & out] n4  提取器节点1：右下
+ */
+void ExtractorNode::DivideNode(ExtractorNode &n1, 	
 							   ExtractorNode &n2, 
 							   ExtractorNode &n3, 
 							   ExtractorNode &n4)
@@ -651,7 +647,8 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, 	//四个提取节点
     const int halfY = ceil(static_cast<float>(BR.y-UL.y)/2);
 
     //Define boundaries of childs
-	//下面的操作大同小异，目测是将一个图像区域再细分成为四个小图像区块
+	//下面的操作大同小异，将一个图像区域再细分成为四个小图像区块
+    //n1 存储左上区域的边界
     n1.UL = UL;
     n1.UR = cv::Point2i(UL.x+halfX,UL.y);
     n1.BL = cv::Point2i(UL.x,UL.y+halfY);
@@ -659,18 +656,21 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, 	//四个提取节点
 	//用来存储在该节点对应的图像网格中提取出来的特征点的vector
     n1.vKeys.reserve(vKeys.size());
 
+    //n2 存储右上区域的边界
     n2.UL = n1.UR;
     n2.UR = UR;
     n2.BL = n1.BR;
     n2.BR = cv::Point2i(UR.x,UL.y+halfY);
     n2.vKeys.reserve(vKeys.size());
 
+    //n3 存储左下区域的边界
     n3.UL = n1.BL;
     n3.UR = n1.BR;
     n3.BL = BL;
     n3.BR = cv::Point2i(n1.BR.x,BL.y);
     n3.vKeys.reserve(vKeys.size());
 
+    //n4 存储右下区域的边界
     n4.UL = n3.UR;
     n4.UR = n2.BR;
     n4.BL = n3.BR;
@@ -1125,7 +1125,7 @@ void ORBextractor::ComputeKeyPointsOctTree(
                 float maxX = iniX+wCell+6;
 				//判断坐标是否在图像中
 				//TODO 不太能够明白为什么要-6，前面不都是-3吗
-				//BUG  疑似bug，源程序的确就是这样子写的
+				//?BUG  疑似bug，源程序的确就是这样子写的
                 if(iniX>=maxBorderX-6)
                     continue;
 				//如果最大坐标越界那么委屈一下
@@ -1682,7 +1682,7 @@ void ORBextractor::operator()(
 
 /**
  * 构建图像金字塔
- * @param image 输入图像，这个输入图像所有像素都是有效的，也就是说都是可以在其上提取出FAST角点的
+ * @param image 输入原图像，这个输入图像所有像素都是有效的，也就是说都是可以在其上提取出FAST角点的
  */
 void ORBextractor::ComputePyramid(cv::Mat image)
 {
@@ -1693,16 +1693,15 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         float scale = mvInvScaleFactor[level];
 		//计算本层图像的像素尺寸大小
         Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
-		//真正的包括无效图像区域的大小。实际上作者这样做是将图像进行“裁边”，EDGE_THRESHOLD区域内的图像不进行FAST角点检测
+		//全尺寸图像。包括无效图像区域的大小。将图像进行“补边”，EDGE_THRESHOLD区域外的图像不进行FAST角点检测
         Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
-		//声明两个临时变量，第一个保持和有效图像大小相同，另外一个看上去是要作为掩膜
-		//NOTE 后者其实在这个程序中并没有被使用到
+		//?声明两个临时变量，temp貌似并未使用，masktemp并未使用
         Mat temp(wholeSize, image.type()), masktemp;
 		//把图像金字塔该图层的图像copy给temp（这里为浅拷贝，内存相同）
         mvImagePyramid[level] = temp(Rect(EDGE_THRESHOLD, EDGE_THRESHOLD, sz.width, sz.height));
 
         // Compute the resized image
-		//计算非第0层图像，resize
+		//计算第0层以上resize后的图像
         if( level != 0 )
         {
 			//将上一层金字塔图像根据设定sz缩放到当前层级
@@ -1715,8 +1714,7 @@ void ORBextractor::ComputePyramid(cv::Mat image)
 
 			//把源图像拷贝到目的图像的中央，四面填充指定的像素。图片如果已经拷贝到中间，只填充边界
 			//TODO 貌似这样做是因为在计算描述子前，进行高斯滤波的时候，图像边界会导致一些问题，说不明白
-			//而前面定义的EDGE_THRESHOLD就是指的这个边界的宽度，由于这个边界是通过某种算法生成出来的，所以
-			//当然也不能够在EDGE_THRESHOLD内提取特征点			
+			//EDGE_THRESHOLD指的这个边界的宽度，由于这个边界之外的像素不是原图像素而是算法生成出来的，所以不能够在EDGE_THRESHOLD之外提取特征点			
             copyMakeBorder(mvImagePyramid[level], 					//源图像
 						   temp, 									//目标图像（此时其实就已经有大了一圈的尺寸了）
 						   EDGE_THRESHOLD, EDGE_THRESHOLD, 			//top & bottom 需要扩展的border大小
@@ -1738,8 +1736,8 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         else
         {
 			//对于底层图像，直接就扩充边界了
-            // ? temp输出并没有拷贝给mvImagePyramid
-            copyMakeBorder(image,			//这里是货真价实的原图像啊
+            //?temp 是在循环内部新定义的，在该函数里又作为输出，并没有使用啊！
+            copyMakeBorder(image,			//这里是原图像
 						   temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
                            BORDER_REFLECT_101);            
         }

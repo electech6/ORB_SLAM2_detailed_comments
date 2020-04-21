@@ -30,7 +30,6 @@
 
 using namespace std;
 
-// 主要的操作和 mono_euroc.cc 类似
 
 void LoadImages(const string &strFile, vector<string> &vstrImageFilenames,
                 vector<double> &vTimestamps);
@@ -127,12 +126,20 @@ int main(int argc, char **argv)
     return 0;
 }
 
+/**
+ * @brief 导入图片
+ * 
+ * @param[in] strFile                   读入的文件名称
+ * @param[in&out] vstrImageFilenames    彩色图片名称
+ * @param[in&out] vTimestamps           记录时间戳
+ */
 void LoadImages(const string &strFile, vector<string> &vstrImageFilenames, vector<double> &vTimestamps)
 {
     ifstream f;
     f.open(strFile.c_str());
 
     // skip first three lines
+    // 前三行是注释，跳过
     string s0;
     getline(f,s0);
     getline(f,s0);
