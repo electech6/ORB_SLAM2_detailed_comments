@@ -829,6 +829,7 @@ void Tracking::StereoInitialization()
                 // a.表示该MapPoint可以被哪个KeyFrame的哪个特征点观测到
                 pNewMP->AddObservation(pKFini,i);
                 // b.从众多观测到该MapPoint的特征点中挑选区分度最高的描述子
+                
                 //? 如何定义的这个区分度?
                 pNewMP->ComputeDistinctiveDescriptors();
                 // c.更新该MapPoint平均观测方向以及观测距离的范围
