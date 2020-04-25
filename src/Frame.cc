@@ -348,18 +348,6 @@ Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
 }
 
 // 单目初始化
-/**
- * @brief Construct a new Frame:: Frame object
- * 
- * @param[in] imGray 
- * @param[in] timeStamp 
- * @param[in] extractor 
- * @param[in] voc 
- * @param[in] K 
- * @param[in] distCoef 
- * @param[in] bf 
- * @param[in] thDepth 
- */
 Frame::Frame(const cv::Mat &imGray, 			//灰度化后的彩色图像
 			 const double &timeStamp, 			//时间戳
 			 ORBextractor* extractor,			//ORB特征点提取器的句柄
@@ -379,7 +367,7 @@ Frame::Frame(const cv::Mat &imGray, 			//灰度化后的彩色图像
 {
     /** 主要步骤: */
 
-    //! Frame ID 注意这是一个静态变量，作用域为全局
+    // Frame ID
 	/** 1. 获取帧的ID */
     mnId=nNextId++;
 
