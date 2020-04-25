@@ -285,17 +285,19 @@ protected:
 
     // Mean viewing direction
     // 该MapPoint平均观测方向
-    //? 为什么要做这个呢? 
+    //? 为什么要做这个呢? ORBmatcher.cc中用到此向量，确定搜索区域
     cv::Mat mNormalVector;
 
     // Best descriptor to fast matching
     // 每个3D点也有一个descriptor
     // 如果MapPoint与很多帧图像特征点对应（由keyframe来构造时），那么距离其它描述子的平均距离最小的描述子是最佳描述子
-    // MapPoint只与一帧的图像特征点对应（由frame来构造时），那么这个特征点的描述子就是该3D点的描述子 --  其实就是初始描述子呗
+    //? MapPoint只与一帧的图像特征点对应（由frame来构造时），那么这个特征点的描述子就是该3D点的描述子 --  其实就是初始描述子呗 
+    //? 一个变量不能代表两重含义吧
     cv::Mat mDescriptor; ///< 通过 ComputeDistinctiveDescriptors() 得到的最优描述子
 
     /// Reference KeyFrame
-    //? 什么意思? 就是生成它的关键帧吗?
+    //? 什么意思? 就是生成它的关键帧吗? 
+    // 解释：通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
     KeyFrame* mpRefKF;
 
     /// Tracking counters
