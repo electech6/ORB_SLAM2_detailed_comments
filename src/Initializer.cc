@@ -1601,7 +1601,22 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
     T.at<float>(1,2) = -meanY*sY;
 }
 
-//进行cheirality check，从而进一步找出F分解后最合适的解
+/**
+ * @brief 进行cheirality check，从而进一步找出F分解后最合适的解
+ * 
+ * @param[in] R 
+ * @param[in] t 
+ * @param[in] vKeys1 
+ * @param[in] vKeys2 
+ * @param[in] vMatches12 
+ * @param[in] vbMatchesInliers 
+ * @param[in] K 
+ * @param[in] vP3D 
+ * @param[in] th2 
+ * @param[in] vbGood 
+ * @param[in] parallax 
+ * @return int 
+ */
 int Initializer::CheckRT(
     const cv::Mat &R,                               //待检查的相机旋转矩阵R
     const cv::Mat &t,                               //待检查的相机旋转矩阵t
