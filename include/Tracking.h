@@ -62,7 +62,7 @@ class LoopClosing;
 class System;
 
 /**
- * @brief 追踪功能
+ * @brief  追踪当前帧功能
  * 
  */
 class Tracking
@@ -95,6 +95,7 @@ public:
      * @return cv::Mat          世界坐标系到该帧相机坐标系的变换矩阵
      */
     cv::Mat GrabImageStereo(const cv::Mat &imRectLeft,const cv::Mat &imRectRight, const double &timestamp);
+
     /**
      * @brief 处理RGBD输入的图像
      * 
@@ -104,6 +105,7 @@ public:
      * @return cv::Mat          世界坐标系到该帧相机坐标系的变换矩阵
      */
     cv::Mat GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp);
+
     /**
      * @brief 处理单目输入图像
      * 
@@ -119,12 +121,14 @@ public:
      * @param[in] pLocalMapper 局部建图器
      */
     void SetLocalMapper(LocalMapping* pLocalMapper);
+
     /**
      * @brief 设置回环检测器句柄
      * 
      * @param[in] pLoopClosing 回环检测器
      */
     void SetLoopClosing(LoopClosing* pLoopClosing);
+
     /**
      * @brief 设置可视化查看器句柄
      * 
@@ -146,7 +150,7 @@ public:
     /**
      * @brief 设置进入仅定位模式
      * 
-     * @param[in] flag //?
+     * @param[in] flag 设置仅仅进行跟踪的标志位
      */
     void InformOnlyTracking(const bool &flag);
 
@@ -206,7 +210,9 @@ public:
     ///标记当前系统是处于SLAM状态还是纯定位状态
     bool mbOnlyTracking;
 
-    /** @brief 整个系统进行复位操作 */
+    /** 
+     * @brief 整个系统进行复位操作
+     */
     void Reset();
 
 protected:
@@ -222,6 +228,7 @@ protected:
     // Map initialization for monocular
     /** @brief 单目输入的时候所进行的初始化操作 */
     void MonocularInitialization();
+   
     /** @brief 单目输入的时候生成初始地图 */
     void CreateInitialMapMonocular();
 
@@ -231,6 +238,7 @@ protected:
      * Local Mapping线程可能会将关键帧中某些MapPoints进行替换，由于tracking中需要用到mLastFrame，这里检查并更新上一帧中被替换的MapPoints
      * @see LocalMapping::SearchInNeighbors()
      */
+
     void CheckReplacedInLastFrame();
     /**
      * @brief 对参考关键帧的MapPoints进行跟踪
@@ -241,6 +249,7 @@ protected:
      * 4. 根据姿态剔除误匹配
      * @return 如果匹配数大于10，返回true
      */
+
     bool TrackReferenceKeyFrame();
     /**
      * @brief 双目或rgbd摄像头根据深度值为上一帧产生新的MapPoints
@@ -248,6 +257,7 @@ protected:
      * 在双目和rgbd情况下，选取一些深度小一些的点（可靠一些） \n
      * 可以通过深度值产生一些新的MapPoints
      */
+
     void UpdateLastFrame();
     
     /**
@@ -267,6 +277,7 @@ protected:
 
     /** @brief 更新局部地图 */
     void UpdateLocalMap();
+    
     /** @brief 更新局部地图点? //?? */
     void UpdateLocalPoints();
     /** @brief 跟新局部关键帧 */
