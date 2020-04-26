@@ -1950,6 +1950,7 @@ void Tracking::UpdateLocalKeyFrames()
         }
 
         mvpLocalKeyFrames.push_back(it->first);
+        
         // mnTrackReferenceForFrame防止重复添加局部关键帧
         //? 这里我可以理解成为,某个关键帧已经被设置为当前帧的 局部关键帧了吗?
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
