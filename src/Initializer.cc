@@ -634,25 +634,42 @@ float Initializer::CheckHomography(
     vector<bool> &vbMatchesInliers,     //匹配好的特征点对的Inliers标记
     float sigma)                        //估计误差
 {
-    /** 对单应矩阵打分来实现RANSAC的过程,需要用到卡方检验的知识.
-     * \n 评分的计算公式:
-     * \n \f$ source(\mathbf{H}) = \sum_{i=0}^N \begin{bmatrix}
-     * \rho (T_H-\begin{Vmatrix} \mathbf{x}'-\mathbf{H}\mathbf{x} \end{Vmatrix}^2/\sigma^2) +
-     * \rho (T_H-\begin{Vmatrix} \mathbf{x}-\mathbf{H}\mathbf{x}' \end{Vmatrix}^2/\sigma^2) 
-     * \end{bmatrix} \f$
-     * \n 其中:
-     * \n \f$ \rho= \begin{cases} 0,&x\leq0\\ x,&else \end{cases} \f$
-     * \n \f$ T_H \f$ 是阈值. 公式的原理将会在下面加以详细介绍.
-     * \n 思路有些相似但是又有一些不同:
-     * @see Initializer::CheckFundamental()
-     * \n 操作步骤如下:<ul> */
-	//获取特征点对的总大小
+
+    // 特别说明：在已值n维观测数据误差服从N(0，sigma）的高斯分布时
+    // 其误差加权最小二乘结果为  sum_error = SUM(e(i)^T * Q^(-1) * e(i))
+    // 其中：e(i) = [e_x,e_y,...]^T, Q维观测数据协方差矩阵，即sigma * sigma组成的协方差矩阵
+    // 误差加权最小二次结果越小，说明观测数据精度越高
+    // 那么，score = SUM((th - e(i)^T * Q^(-1) * e(i)))的分数就越高
+    // Algo 检查单应变换矩阵
+    // 检查方式：通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权最小二乘投影误差
+    // input: homography matrix H21, H12, matched points set mvKeys1
+    //    do:
+    //        for p1(i), p2(i) in mvKeys:
+    //           error_i1 = ||p2(i) - H21 * p1(i)||2
+    //           error_i2 = ||p1(i) - H12 * p2(i)||2
+    //           
+    //           w1 = 1 / sigma / sigma
+    //           w2 = 1 / sigma / sigma
+    // 
+    //           if error1 < th
+    //              weighted_least_squares_error +=   error_i1 * w1
+    //           if error2 < th
+    //              weighted_least_squares_error +=   error_i2 * w2
+    // 
+    //           if error_1i > th or error_2i > th
+    //              p1(i), p2(i) are inner points
+    //              vbMatchesInliers(i) = true
+    //           else 
+    //              p1(i), p2(i) are outliers
+    //              vbMatchesInliers(i) = false
+    //           end
+    //        end
+    //   output: score = weighted_least_squares_error, inliers
+
+	// 特点匹配个数
     const int N = mvMatches12.size();
 
-	//获取从参考帧到当前帧的单应矩阵的各个元素
-    // |h11 h12 h13|
-    // |h21 h22 h23|
-    // |h31 h32 h33|
+	// 获取从参考帧到当前帧的单应矩阵的各个元素
     const float h11 = H21.at<float>(0,0);
     const float h12 = H21.at<float>(0,1);
     const float h13 = H21.at<float>(0,2);
@@ -663,10 +680,7 @@ float Initializer::CheckHomography(
     const float h32 = H21.at<float>(2,1);
     const float h33 = H21.at<float>(2,2);
 
-	//然后获取它的逆的各个元素
-    // |h11inv h12inv h13inv|
-    // |h21inv h22inv h23inv|
-    // |h31inv h32inv h33inv|
+	// 获取从当前帧到参考帧的单应矩阵的各个元素
     const float h11inv = H12.at<float>(0,0);
     const float h12inv = H12.at<float>(0,1);
     const float h13inv = H12.at<float>(0,2);
@@ -677,10 +691,10 @@ float Initializer::CheckHomography(
     const float h32inv = H12.at<float>(2,1);
     const float h33inv = H12.at<float>(2,2);
 
-	//给特征点对的Inliers标记预分配空间
+	// 给特征点对的Inliers标记预分配空间
     vbMatchesInliers.resize(N);
 
-	//初始化RANSAC评分
+	// 初始化score值
     float score = 0;
 
     // 基于卡方检验计算出的阈值（假设测量有一个像素的偏差）
@@ -688,140 +702,75 @@ float Initializer::CheckHomography(
     const float th = 5.991;
 
     //信息矩阵，方差平方的倒数
-	//TODO 还不明白为什么泡泡机器人给出的注释说下面的这个是信息矩阵
-	//NOTE 不是有一个类成员变量 mSigma2 吗。。。为什么不直接用那个呢——我猜是程序员忘记了
-    const float invSigmaSquare = 1.0/(sigma*sigma);
+    const float invSigmaSquare = 1.0/(sigma * sigma);
 
-    // N对特征匹配点
-    /** <li> 对于两帧上所有的匹配的特征点对展开遍历.对于具体地某对特征点,进行下面的操作: </li> <ul>*/
-    for(int i=0; i<N; i++)
+    // 遍历N对特征匹配点
+    // 通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权最小二乘投影误差
+    // H21 表示从img1 到 img2的变换矩阵
+    // H12 表示从img2 到 img1的变换矩阵 
+    for(int i = 0; i < N; i++)
     {
-		//一开始都默认为Inlier
+		// 一开始都默认为Inlier
         bool bIn = true;
 
-         /** <li> 根据索引获取这对匹配特征点的坐标. </li> 
-         * \n 记为:
-         * \n \f$ (u_1,v_1),(u_2,v_2)  \f$
-         * \n 分别为来自参考帧的特征点坐标和来自当前帧的特征点坐标
-        */
-		//根据索引获取这一对特征点
+		// 提取参考帧和当前帧之间的特征匹配点对
         const cv::KeyPoint &kp1 = mvKeys1[mvMatches12[i].first];
         const cv::KeyPoint &kp2 = mvKeys2[mvMatches12[i].second];
-		//提取特征点的坐标
         const float u1 = kp1.pt.x;
         const float v1 = kp1.pt.y;
         const float u2 = kp2.pt.x;
         const float v2 = kp2.pt.y;
 
-       
-        /** <li> 进行反投影操作. </li> 
-         * \n 根据是这样的,从单应矩阵的定义;
-         * \n \f$ \begin{bmatrix} u_1\\v_1\\1 \end{bmatrix} = \begin{bmatrix} h_1&h_2&h_3\\ h_4&h_5&h_6\\
-         * h_7&h_8&h_9 \end{bmatrix} \begin{bmatrix} u_2\\v_2\\1 \end{bmatrix}  \f$
-         * \n 可以得到,点 \f$ [u_2,v_2,1]^{\text{T}}  \f$ 在参考帧(1)上的重投影点 \f$  [u'_1,v'_1,1]^{\text{T}} \f$ :
-         * \n \f$ \begin{bmatrix} u'_1\\v'_1\\1 \end{bmatrix} =
-         *        \begin{bmatrix} h_1&h_2&h_3\\ h_4&h_5&h_6\\ h_7&h_8&h_9 \end{bmatrix}^{-1}
-         *        \begin{bmatrix} u_2\\v_2\\1 \end{bmatrix}  \f$
-         * \n 而对称转移误差的形式为:
-         * \n \f$  d(x,H^{-1}x'^2)+d(x',H^{-1}x^2) \f$
-         * \n 下面开始计算第一个部分
-         */
-
-        // Reprojection error in first image
+        // 计算 img2 到 img1 的重投影误差
         // x2in1 = H12*x2
         // 将图像2中的特征点单应到图像1中
-        // |u1|   |h11inv h12inv h13inv||u2|
-        // |v1| = |h21inv h22inv h23inv||v2|
-        // |1 |   |h31inv h32inv h33inv||1 |
-		//这个是一个归一化系数，因为我们希望单应到图像1中的这个点的齐次坐标，最后一维为1
-        const float w2in1inv = 1.0/(h31inv*u2+h32inv*v2+h33inv);	//为了计算方便加了一个倒数
-		//计算两个坐标
-        const float u2in1 = (h11inv*u2+h12inv*v2+h13inv)*w2in1inv;	//u2_in_image_1
-        const float v2in1 = (h21inv*u2+h22inv*v2+h23inv)*w2in1inv;	//v2_in_image_1
+        // |u1|   |h11inv h12inv h13inv||u2|   |u2in1|
+        // |v1| = |h21inv h22inv h23inv||v2| = |v2in1| * w2in1inv
+        // |1 |   |h31inv h32inv h33inv||1 |   |  1  |
+		// 计算投影归一化坐标
+        const float w2in1inv = 1.0/(h31inv * u2 + h32inv * v2 + h33inv);
+        const float u2in1 = (h11inv * u2 + h12inv * v2 + h13inv) * w2in1inv;
+        const float v2in1 = (h21inv * u2 + h22inv * v2 + h23inv) * w2in1inv;
+   
+        // 计算加权最小二乘误差 = ||p2(i) - H21 * p1(i)||2 = (p2.x * p2.x + p1.x + p1.x) * w
+        const float squareDist1 = (u1 - u2in1) * (u1 - u2in1) + (v1 - v2in1) * (v1 - v2in1);
+        const float chiSquare1 = squareDist1 * invSigmaSquare;
 
-        /** <li> 计算对称转移误差的第一个部分 </li> 
-         * \n 误差定义:
-         * \n \f$ {\Delta_{1 \leftarrow 2}} ^2=(u_1-u'_1)^2+(v1-v'_1)^2 \f$
-         */
-
-        // ! 但是我现在觉得自由度不能够简单地看这里的平方项的个数来定义
-        // ! 如果这样的话，F矩阵的平方项怎么算？每个组成部分中都有相应的平方项
-        // ! 这一点目前解释不通
-
-        const float squareDist1 = (u1-u2in1)*(u1-u2in1)+(v1-v2in1)*(v1-v2in1);
-
-        /** <li> 根据测量误差计算归一化误差 </li> 
-         * 这里的误差只有归一化之后，后面的RANSAC评分在不同点和不同的矩阵（主要是这个）中的比较才会有意义. 公式:
-         * \n \f$  e_{1\leftarrow2}^2=\frac{\Delta_{1\leftarrow2}^2}{\sigma^2} \f$
-         * \n todo 需要搞明白的就是,这里使用卡方分布的时候,为什么分母是 \f$ \sigma^2 \f$ ?
-        */
-        const float chiSquare1 = squareDist1*invSigmaSquare;
-
-		//如果这个点的归一化后的重投影误差超过了给定的阈值
-		//
-        /** <li> 判断这个归一化误差是否超过了阈值 5.991 </li> 
-         * \n 其实就是如果这个误差的平方和超过了卡方阈值 5.991 后,说明观测的点的误差有95%的概率不符合正态分布.
-         * \n 关于卡方分布,是类似于这样的一个东西:
-         * \n \f$ \mathcal{X}(v,x)=\sum_{i=1}^{v}x_i^2  \f$
-         * \n 其中 \f$  x \f$ 是满足某个正态分布的随机变量, \f$ v \f$ 是自由度,即有几个这样的自变量加和.
-         * \n 而注意到上面的归一化对称转移误差中,一共有两项的平方和的形式;如果我们认为每个坐标上点的对称转移误差都服从正态分布,那么上式的
-         * 归一化对称转移误差就组成了一个自由度为2的卡方分布表达形式. 而根据卡方分布表,当自由度为2时,如果这个和小于5.991才能够认为"在"
-         * 每个坐标的点的对称转移误差"才有超过95%的概率符合正态分布,也就是可以理解为这个时候才会有超过95%的概率是正确的.
-         * <ul>
-        */
+        // 离群点阈值分割，或者累加得分
         if(chiSquare1>th)
-			//那么说明就是Outliers
-            /** <li> 如果超过这个阈值,说明这个点不符合我们的假设,将它标记为外点  </li> */
             bIn = false;
         else
-            /** <li> 在阈值内才算是Inliers. 然后将当前点的 RANSAC 评分累加. </li> 
-             * 这里使用的 RANSAC 评分定义为 "阈值-归一化方差", 如果这个归一化方差越小, 那么离阈值也就越小, 也就说明它所对应的一对特征点
-             * 有更大的概率满足我们前面的高斯分布假设,因此这个点的 RANSAC 评分也就越高.
-            */
             score += th - chiSquare1;
-        /** </ul> */
-		
-        /** <li> 计算对称转移误差的另外一个部分 </li> 
-         * \n \f$ \begin{bmatrix} u_1\\v_1\\1 \end{bmatrix} = 
-         *        \begin{bmatrix} h_1&h_2&h_3\\ h_4&h_5&h_6\\ h_7&h_8&h_9 \end{bmatrix}
-         *        \begin{bmatrix} u'_2\\v'_2\\1 \end{bmatrix}  \f$
-        */
-        // Reprojection error in second image
-        // x1in2 = H21*x1
-        // 将图像1中的特征点单应到图像2中
-		//缩放因子
+
+        // 计算从img1 到 img2 的投影变换误差
+        // x1in2 = H12*x2
+        // 将图像2中的特征点单应到图像1中
+        // |u2|   |h11 h12 h13||u1|   |u1in2|
+        // |v2| = |h21 h22 h23||v1| = |v1in2| * w1in2inv
+        // |1 |   |h31 h32 h33||1 |   |  1  |
+		// 计算投影归一化坐标
         const float w1in2inv = 1.0/(h31*u1+h32*v1+h33);
-		//两个坐标
         const float u1in2 = (h11*u1+h12*v1+h13)*w1in2inv;
         const float v1in2 = (h21*u1+h22*v1+h23)*w1in2inv;
 
-        /** <li> 计算对称转移误差的另外一个部分,并且归一化,判断是否满足卡方分布假设,计算RANSAC评分,和前面一样 </li>
-         * \n 注意这里也是要将这个的 RANSAC 评分累加的
-         */
+        // 计算加权最小二乘误差 
         const float squareDist2 = (u2-u1in2)*(u2-u1in2)+(v2-v1in2)*(v2-v1in2);
         const float chiSquare2 = squareDist2*invSigmaSquare;
-		//比较归一化后的误差是否大于阈值
+
+        // 离群点阈值分割，或者累加得分
         if(chiSquare2>th)
-			//大于阈值说明是Outlier
             bIn = false;
         else
-			//反之则是Inlier，保持标志不变；同时累计评分
             score += th - chiSquare2;
 
-        /** <li> 得出一个点是否为 inlier 的判断. </li> 
-         * \n 注意，只有两种重投影下,这对特征点都是Inlier才会认为这对匹配关系是Inlier; 只要有一个特征点是Outlier那么就认为这对特征点的匹配关系是Outlier
-        */
+        // 如果从img2 到 img1 和 从img1 到img2的重投影误差均满足要求，则说明是Inlier point
         if(bIn)
             vbMatchesInliers[i]=true;
         else
             vbMatchesInliers[i]=false;
-    }//对于每对匹配好的特征点
-    /** </ul> */
-
-    //返回当前给出的单应矩阵的评分
+    }
     return score;
-    /** </ul> */
-}//计算给出的单应矩阵的RANSAC评分
+}
 
 //对给定的fundamental matrix打分
 // @see Initializer::CheckHomography() 
