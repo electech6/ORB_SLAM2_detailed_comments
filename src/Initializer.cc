@@ -1573,35 +1573,26 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
 }
 
 /**
- * @brief 进行cheirality check，从而进一步找出F分解后最合适的解
+ * @brief 用R，t来对特征匹配点三角化，并根据三角化结果判断R,t的合法性
  * 
- * @param[in] R 
- * @param[in] t 
- * @param[in] vKeys1 
- * @param[in] vKeys2 
- * @param[in] vMatches12 
- * @param[in] vbMatchesInliers 
- * @param[in] K 
- * @param[in] vP3D 
- * @param[in] th2 
- * @param[in] vbGood 
- * @param[in] parallax 
+ * @param[in] R                                     旋转矩阵R
+ * @param[in] t                                     平移矩阵t
+ * @param[in] vKeys1                                参考帧特征点  
+ * @param[in] vKeys2                                当前帧特征点
+ * @param[in] vMatches12                            两帧特征点的匹配关系
+ * @param[in] vbMatchesInliers                      特征点对内点标记
+ * @param[in] K                                     相机内参矩阵
+ * @param[in & out] vP3D                            三角化测量之后的特征点的空间坐标
+ * @param[in] th2                                   重投影误差的阈值
+ * @param[in & out] vbGood                          标记成功三角化点？
+ * @param[in & out] parallax                        计算出来的比较大的视差角（注意不是最大，具体看后面代码）
  * @return int 
  */
-int Initializer::CheckRT(
-    const cv::Mat &R,                               //待检查的相机旋转矩阵R
-    const cv::Mat &t,                               //待检查的相机旋转矩阵t
-	const vector<cv::KeyPoint> &vKeys1,             //参考帧特征点  
-    const vector<cv::KeyPoint> &vKeys2,             //当前帧特征点
-    const vector<Match> &vMatches12,                //两帧特征点的匹配关系
-    vector<bool> &vbMatchesInliers,                 //特征点对的Inliers标记
-    const cv::Mat &K,                               //相机的内参数矩阵
-    vector<cv::Point3f> &vP3D,                      //三角化测量之后的特征点的空间坐标
-    float th2,                                      //重投影误差的阈值
-    vector<bool> &vbGood,                           //特征点（对）中是good点的标记
-    float &parallax)                                //计算出来的比较大的视差角（注意不是最大，这个要看后面中程序的注释）
+int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::KeyPoint> &vKeys1, const vector<cv::KeyPoint> &vKeys2,
+                       const vector<Match> &vMatches12, vector<bool> &vbMatchesInliers,
+                       const cv::Mat &K, vector<cv::Point3f> &vP3D, float th2, vector<bool> &vbGood, float &parallax)
 {   
-    /** 对给出的一组相机运动 R t , 检查解的有效性。 这里又称之为 cheirality check。步骤如下。 <ul> */
+    // 对给出的特征点对及其R t , 通过三角化检查解的有效性，也称为 cheirality check
 
     // Calibration parameters
 	//从相机内参数矩阵获取相机的校正参数
@@ -1617,67 +1608,57 @@ int Initializer::CheckRT(
 
 	//存储计算出来的每对特征点的视差
     vector<float> vCosParallax;
-	//然后预分配空间
     vCosParallax.reserve(vKeys1.size());
 
     // Camera 1 Projection Matrix K[I|0]
-    /** <li> 步骤1：得到第一个相机的投影矩阵 </li> 
-     * \n 投影矩阵是一个 3x4 的矩阵，可以将空间中的一个点投影到平面上，获得其平面坐标，这里均指的是齐次坐标。
-     * \n 对于第一个相机是 P1=K*[I|0]
-    */
-    // 以第一个相机的光心作为世界坐标系
-	//定义相机的投影矩阵
+    // Step 1：计算相机的投影矩阵  
+    // 投影矩阵P是一个 3x4 的矩阵，可以将空间中的一个点投影到平面上，获得其平面坐标，这里均指的是齐次坐标。
+    // 对于第一个相机是 P1=K*[I|0]
+ 
+    // 以第一个相机的光心作为世界坐标系, 定义相机的投影矩阵
     cv::Mat P1(3,4,				//矩阵的大小是3x4
 			   CV_32F,			//数据类型是浮点数
 			   cv::Scalar(0));	//初始的数值是0
-	//将整个K矩阵拷贝到P1矩阵的(0,0)~(2,2)，K*[I|0]
+	//将整个K矩阵拷贝到P1矩阵的左侧3x3矩阵，因为 K*I = K
     K.copyTo(P1.rowRange(0,3).colRange(0,3));
-    // 第一个相机的光心在世界坐标系下的坐标(对于目前的应用的问题来说，这个坐标其实就是原点)
+    // 第一个相机的光心设置为世界坐标系下的原点
     cv::Mat O1 = cv::Mat::zeros(3,1,CV_32F);
 
     // Camera 2 Projection Matrix K[R|t]
-    /** <li> 步骤2：得到第二个相机的投影矩阵 </li> 
-     * \n 对于第二个相机来说是 P2=K*[R|t]
-     */  
-	//定义
+    // 计算第二个相机的投影矩阵 P2=K*[R|t]
     cv::Mat P2(3,4,CV_32F);
-	//生成
     R.copyTo(P2.rowRange(0,3).colRange(0,3));
     t.copyTo(P2.rowRange(0,3).col(3));
 	//最终结果是K*[R|t]
     P2 = K*P2;
     // 第二个相机的光心在世界坐标系下的坐标
-    //这样子计算的原因参考 Frame::UpdatePoseMatrices() 
     cv::Mat O2 = -R.t()*t;
 
 	//在遍历开始前，先将good点计数设置为0
     int nGood=0;
 
-	/** <li> 开始遍历所有的特征点对：  </li> <ul>*/
+	// 开始遍历所有的特征点对
     for(size_t i=0, iend=vMatches12.size();i<iend;i++)
     {
 
-		/** <li> 跳过outliers </li> */
+		// 跳过outliers
         if(!vbMatchesInliers[i])
-			//进行下一个特征点对的遍历
             continue;
 
-        /** <li> 获取特征点对，调用 Initializer::Triangulate() 函数进行三角化，得到三角化测量之后的3D点坐标 </li> */
-        // kp1和kp2是匹配特征点
-		//如果是Inliers就根据存储的索引关系拿到两个特征点
+        // Step 2 获取特征点对，调用Triangulate() 函数进行三角化，得到三角化测量之后的3D点坐标
+        // kp1和kp2是匹配好的有效特征点
         const cv::KeyPoint &kp1 = vKeys1[vMatches12[i].first];
         const cv::KeyPoint &kp2 = vKeys2[vMatches12[i].second];
 		//存储三维点的的坐标
         cv::Mat p3dC1;
 
-        // 步骤3：利用三角法恢复三维点p3dC1
+        // 利用三角法恢复三维点p3dC1
         Triangulate(kp1,kp2,	//特征点
 					P1,P2,		//投影矩阵
 					p3dC1);		//输出，三角化测量之后特征点的空间坐标		
 
-		// NOTICE 下面的这个isfinite()貌似确实没有被定义过啊，是C++中提供的函数吗
-        // at 2019.02.14 根据提示来看好像是boost库中的函数
-        /** <li> 检验一：只要三角测量的结果中有一个是无穷大的就说明三角化失败，跳过对当前点的处理，进行下一对特征点的遍历 </li> */
+		// Step 3 第一关：检查三角化的三维点坐标是否合法（非无穷值）
+        // 只要三角测量的结果中有一个是无穷大的就说明三角化失败，跳过对当前点的处理，进行下一对特征点的遍历 
         if(!isfinite(p3dC1.at<float>(0)) || !isfinite(p3dC1.at<float>(1)) || !isfinite(p3dC1.at<float>(2)))
         {
 			//其实这里就算是不这样写也没问题，因为默认的匹配点对就不是good点
@@ -1687,9 +1668,8 @@ int Initializer::CheckRT(
         }
 
         // Check parallax
-        /** <li> 如果通过，接下来计算视差角余弦值 </li> 
-         * \n 使用空间点、两帧的相机光心点构造三角形，利用余弦定理求解
-        */
+        // Step 4 第二关：通过三维点深度值正负、两相机光心视差角大小来检查是否合法 
+
         //得到向量PO1
         cv::Mat normal1 = p3dC1 - O1;
 		//求取模长，其实就是距离
@@ -1703,23 +1683,22 @@ int Initializer::CheckRT(
 		//根据公式：a.*b=|a||b|cos_theta 可以推导出来下面的式子
         float cosParallax = normal1.dot(normal2)/(dist1*dist2);
 
-        /** <li> 检验二：判断3D点是否在两个摄像头前方？视差角是否不太大？ 不满足的话跳过对当前点对的遍历 </li> */
         // Check depth in front of first camera (only if enough parallax, as "infinite" points can easily go to negative depth)
-        // 在第一个摄像头后方？
-        if(p3dC1.at<float>(2)<=0 && 		//3D点深度为负
-			cosParallax<0.99998)			//并且还要有一定的视差角 
-											//原因在下面会提到：一般视差角比较小时重投影误差比较大
-			//然后就不用这个点了，直接淘汰进行下一个点
+        // 如果深度值为负值，为非法三维点跳过该匹配点对
+        // ?视差比较小时，重投影误差比较大。这里0.99998 对应的角度为0.36°,这里不应该是 cosParallax>0.99998 吗？
+        // ?因为后面判断vbGood 点时的条件也是 cosParallax<0.99998 
+        // !可能导致初始化不稳定
+        if(p3dC1.at<float>(2)<=0 && cosParallax<0.99998)
             continue;
 
         // Check depth in front of second camera (only if enough parallax, as "infinite" points can easily go to negative depth)
-        // 在第二个摄像头后方？
-        cv::Mat p3dC2 = R*p3dC1+t;			//注意这里是空间点的旋转和平移变换
+        // 讲空间点p3dC1变换到第2个相机坐标系下变为p3dC2
+        cv::Mat p3dC2 = R*p3dC1+t;	
 		//判断过程和上面的相同
         if(p3dC2.at<float>(2)<=0 && cosParallax<0.99998)
             continue;
 
-        /** <li> 检验三：计算空间点在参考帧和当前帧上的重投影误差，如果大于阈值则跳过当前遍历。此外注意，当视差角比较大的时候，重投影误差往往也比较大。 </li> */
+        // Step 5 第三关：计算空间点在参考帧和当前帧上的重投影误差，如果大于阈值则舍弃
         // Check reprojection error in first image
         // 计算3D点在第一个图像上的投影误差
 		//投影到参考帧图像上的点的坐标x,y
@@ -1734,30 +1713,26 @@ int Initializer::CheckRT(
         float squareError1 = (im1x-kp1.pt.x)*(im1x-kp1.pt.x)+(im1y-kp1.pt.y)*(im1y-kp1.pt.y);
 
         // 重投影误差太大，跳过淘汰
-        // 一般视差角比较小时重投影误差比较大
         if(squareError1>th2)
             continue;
 
         // Check reprojection error in second image
-        // 计算3D点在第二个图像上的投影误差
+        // 计算3D点在第二个图像上的投影误差，计算过程和第一个图像类似
         float im2x, im2y;
-		//逆
+        // 注意这里的p3dC2已经是第二个相机坐标系下的三维点了
         float invZ2 = 1.0/p3dC2.at<float>(2);
-		//同样的计算过程
         im2x = fx*p3dC2.at<float>(0)*invZ2+cx;
         im2y = fy*p3dC2.at<float>(1)*invZ2+cy;
 
-		//计算同样的重投影误差
+		// 计算重投影误差
         float squareError2 = (im2x-kp2.pt.x)*(im2x-kp2.pt.x)+(im2y-kp2.pt.y)*(im2y-kp2.pt.y);
 
         // 重投影误差太大，跳过淘汰
-        // 一般视差角比较小时重投影误差比较大
         if(squareError2>th2)
             continue;
 
-        /** <li> 统计经过检验的3D点个数，记录3D点视差角 </li> 
-         * \n 如果运行到这里就说明当前遍历的这个特征点对的性质不错，经过了重重检验，说明是一个合格的点，程序中称之为good点
-         */ 
+        // Step 6 统计经过检验的3D点个数，记录3D点视差角 
+        // 如果运行到这里就说明当前遍历的这个特征点对靠谱，经过了重重检验，说明是一个合格的点，称之为good点 
         vCosParallax.push_back(cosParallax);
 		//存储这个三角化测量后的3D点在世界坐标系下的坐标
         vP3D[vMatches12[i].first] = cv::Point3f(p3dC1.at<float>(0),p3dC1.at<float>(1),p3dC1.at<float>(2));
@@ -1765,28 +1740,23 @@ int Initializer::CheckRT(
         nGood++;
 
 		//判断视差角，只有视差角稍稍大一丢丢的才会给打good点标记
-		//REVIEW 不过我觉得这个写的位置不太对。你的good点计数都++了然后才判断，不是会让good点标志和good点计数不一样吗
+		//? bug 我觉得这个写的位置不太对。你的good点计数都++了然后才判断，不是会让good点标志和good点计数不一样吗
         if(cosParallax<0.99998)
             vbGood[vMatches12[i].first]=true;
-    }//针对特征点对展开遍历
-    /** </ul> */
+    }
 
-    /** <li> 得到3D点中较大的视差角，并且转换成为角度制表示 </li> 
-     * \n 这里有些需要注意的是，如果经过检验过后的点数目小于50个那么就直接取排序后最后一个点的最大视差角；
-     *    否则，则没有必要非得取最大的，直接取第50个点的视差角作为最大视差角
-    */
+    // Step 7 得到3D点中较大的视差角，并且转换成为角度制表示
     if(nGood>0)
     {
         // 从小到大排序
         sort(vCosParallax.begin(),vCosParallax.end());
 
-        // NOTICE trick! 排序后并没有取最大的视差角
-        // 取一个较大的视差角
-		// 作者的想法是，如果经过检验过后的视差角个数小于50个，那么就取最后那个最大的视差角
-		//如果大于50个，就取视差角中的排名第50小的，足够大就可以没有必要非得要最大的—— 
-        //TODO 可这是为什么呢？直接取最后一个点的也不会花时间啊，这里可能是为了避免太大的视差角引起误差吧
+        // !排序后并没有取最大的视差角，而是取一个较大的视差角
+		// 作者的做法：如果经过检验过后的有效3D点小于50个，那么就取最后那个最大的视差角
+		// 如果大于50个，就取排名第50个的视差角，足够大就可以没有必要非得要最大的 
+        // ?可能是为了避免3D点太多时出现太大的视差角，那可以取个中值啊！
         size_t idx = min(50,int(vCosParallax.size()-1));
-		//将这个选中的角由cos值转化为弧度制再转换为角度制
+		//将这个选中的角弧度制转换为角度制
         parallax = acos(vCosParallax[idx])*180/CV_PI;
     }
     else
