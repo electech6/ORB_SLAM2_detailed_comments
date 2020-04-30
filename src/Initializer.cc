@@ -1746,9 +1746,6 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     }
 
     // Step 7 得到3D点中较大的视差角，并且转换成为角度制表示
-     * \n 这里有些需要注意的是，如果经过检验过后的点数目小于50个那么就直接取排序后最后一个点的最大视差角；
-     *    否则，则没有必要非得取最大的，直接取第50个点的视差角作为最大视差角
-    */
     if(nGood>0)
     {
         // 从小到大排序
