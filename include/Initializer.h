@@ -143,7 +143,7 @@ private:
      * @param[in] H21				从参考帧到当前帧的单应矩阵
      * @param[in] H12				从当前帧到参考帧的单应矩阵
      * @param[out] vbMatchesInliers	匹配好的特征点对的Inliers标记
-     * @param[in] sigma				估计误差
+     * @param[in] sigma				方差
      * @see
      * - Author's paper - IV. AUTOMATIC MAP INITIALIZATION （2）
      * - Multiple View Geometry in Computer Vision - symmetric transfer errors: 4.2.2 Geometric distance

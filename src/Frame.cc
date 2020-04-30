@@ -998,7 +998,7 @@ void Frame::ComputeStereoMatches()
           2. 粗匹配. 根据步骤1的结果，对img_left第i行的orb特征点pi，在img_right的第i行上的orb特征点集中搜索相似orb特征点, 得到qi
           3. 精确匹配. 以点qi为中心，半径为r的范围内，进行块匹配（归一化SAD），进一步优化匹配结果
           4. 亚像素精度优化. 步骤3得到的视差为uchar/int类型精度，并不一定是真实视差，通过亚像素差值（抛物线插值)获取float精度的真实视差
-          5. 最有视差值/深度选择. 通过胜者为王算法（WTA）获取最佳匹配点。
+          5. 最优视差值/深度选择. 通过胜者为王算法（WTA）获取最佳匹配点。
           6. 删除离缺点(outliers). 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是正确匹配，比如光照变化、弱纹理等会造成误匹配
      * 输出：稀疏特征点视差图/深度图（亚像素精度）mvDepth 匹配结果 mvuRight
      */
@@ -1024,7 +1024,7 @@ void Frame::ComputeStereoMatches()
 	// 右图特征点数量，N表示数量 r表示右图，且不能被修改
     const int Nr = mvKeysRight.size();
 
-	// step 1. 行特征点统计. 考虑到尺度金字塔特征，一个特征点可能存在于多行，而非唯一的一行
+	// Step 1. 行特征点统计. 考虑到尺度金字塔特征，一个特征点可能存在于多行，而非唯一的一行
     for(int iR = 0; iR < Nr; iR++) {
 
         // 获取特征点ir的y坐标，即行号
@@ -1042,7 +1042,7 @@ void Frame::ComputeStereoMatches()
             vRowIndices[yi].push_back(iR);
     }
 
-    // step 2 -> 3. 粗匹配 + 精匹配
+    // Step 2 -> 3. 粗匹配 + 精匹配
     // 对于立体矫正后的两张图，在列方向(x)存在最大视差maxd和最小视差mind
     // 也即是左图中任何一点p，在右图上的匹配点的范围为应该是[p - maxd, p - mind], 而不需要遍历每一行所有的像素
     // maxd = baseline * length_focal / minZ
@@ -1080,7 +1080,7 @@ void Frame::ComputeStereoMatches()
         size_t bestIdxR = 0;
         const cv::Mat &dL = mDescriptors.row(iL);
         
-        // step2. 粗配准. 左图特征点il与右图中的可能的匹配点进行逐个比较,得到最相似匹配点的相似度和索引
+        // Step2. 粗配准. 左图特征点il与右图中的可能的匹配点进行逐个比较,得到最相似匹配点的相似度和索引
         for(size_t iC=0; iC<vCandidates.size(); iC++) {
 
             const size_t iR = vCandidates[iC];
@@ -1109,6 +1109,7 @@ void Frame::ComputeStereoMatches()
         }
         
         // 如果刚才匹配过程中的最佳描述子距离小于给定的阈值
+        // Step 3. 精确匹配. 
         if(bestDist<thOrbDist) {
             // 计算右图特征点x坐标和对应的金字塔尺度
             const float uR0 = mvKeysRight[bestIdxR].pt.x;
@@ -1181,7 +1182,7 @@ void Frame::ComputeStereoMatches()
             if(bestincR==-L || bestincR==L)
                 continue;
 
-			// step 3. 亚像素插值, 使用最佳匹配点及其左右相邻点构成抛物线
+			// Step 4. 亚像素插值, 使用最佳匹配点及其左右相邻点构成抛物线
             // 使用3点拟合抛物线的方式，用极小值代替之前计算的最优是差值
             //    \                 / <- 由视差为14，15，16的相似度拟合的抛物线
             //      .             .(16)
@@ -1214,13 +1215,14 @@ void Frame::ComputeStereoMatches()
                 // 根据视差值计算深度信息
                 // 保存最相似点的列坐标(x)信息
                 // 保存归一化sad最小相似度
+                // Step 5. 最优视差值/深度选择.
                 mvDepth[iL]=mbf/disparity;
                 mvuRight[iL] = bestuR;
                 vDistIdx.push_back(pair<int,int>(bestDist,iL));
         }   
     }
 
-    // step 6. 删除离缺点(outliers)
+    // Step 6. 删除离缺点(outliers)
     // 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是匹配的，比如光照变化、弱纹理、无纹理等同样会造成误匹配
     // 误匹配判断条件  norm_sad > 1.5 * 1.4 * median
     sort(vDistIdx.begin(),vDistIdx.end());
