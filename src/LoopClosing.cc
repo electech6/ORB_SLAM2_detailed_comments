@@ -317,54 +317,68 @@ bool LoopClosing::DetectLoop()
     return false;
 }
 
-/* 
- * @brief 计算当前帧与闭环帧的Sim3变换等
- * @details \n
- * 1. 通过Bow加速描述子的匹配，利用RANSAC粗略地计算出当前帧与闭环帧的Sim3（当前帧---闭环帧）          \n
- * 2. 根据估计的Sim3，对3D点进行投影找到更多匹配，通过优化的方法计算更精确的Sim3（当前帧---闭环帧）     \n
- * 3. 将闭环帧以及闭环帧相连的关键帧的MapPoints与当前帧的点进行匹配（当前帧---闭环帧+相连关键帧）      \n
- * \n
- * 注意以上匹配的结果均都存在成员变量mvpCurrentMatchedPoints中，实际的更新步骤见CorrectLoop()步骤3：Start Loop Fusion \n
- * 对于双目或者是RGBD输入的情况,计算得到的尺度=1
- */
+
 bool LoopClosing::ComputeSim3()
 {
-    // For each consistent loop candidate we try to compute a Sim3
+    // 说明：计算当前帧与闭环帧的Sim3变换等
+    // 1. 通过Bow加速描述子的匹配，利用RANSAC粗略地计算出当前帧与闭环帧的Sim3（当前帧---闭环帧）          \n
+    // 2. 根据估计的Sim3，对3D点进行投影找到更多匹配，通过优化的方法计算更精确的Sim3（当前帧---闭环帧）     \n
+    // 3. 将闭环帧以及闭环帧相连的关键帧的MapPoints与当前帧的点进行匹配（当前帧---闭环帧+相连关键帧）      \n
+    // 注意以上匹配的结果均都存在成员变量mvpCurrentMatchedPoints中，实际的更新步骤见CorrectLoop()步骤3：Start Loop Fusion \n
+    // 对于双目或者是RGBD输入的情况,计算得到的尺度=1
 
+    // Input:
+    // do   : 
+    //       1. 遍历闭环候选帧集，筛选出与当前帧的匹配特征点数大于20的候选帧集合，并为每一个候选帧构造一个Sim3Solver
+    //       2. 对每一个候选帧进行 RANSAC 迭代匹配，直到有一个候选帧匹配成功，或者全部失败
+    //       3. 取出闭环匹配上关键帧的相连关键帧，得到它们的MapPoints放入 mvpLoopMapPoints
+    //       4. 将闭环匹配上关键帧以及相连关键帧的MapPoints投影到当前关键帧进行投影匹配
+    //       5. 判断当前帧与检测出的所有闭环关键帧是否有足够多的MapPoints匹配
+    //       6. 清空mvpEnoughConsistentCandidates
+    // output:
+
+    // Step 0. 准备工作
+    // For each consistent loop candidate we try to compute a Sim3
     const int nInitialCandidates = mvpEnoughConsistentCandidates.size();
 
     // We compute first ORB matches for each candidate
     // If enough matches are found, we setup a Sim3Solver
     ORBmatcher matcher(0.75,true);
 
+    // 用 vector 存储每一个候选帧的Sim3Solver求解器
     vector<Sim3Solver*> vpSim3Solvers;
-    vpSim3Solvers.resize(nInitialCandidates);// 每个候选帧都有一个Sim3Solver
+    vpSim3Solvers.resize(nInitialCandidates);
 
+    // 用 vector 存储每个候选帧的匹配地图点信息
     vector<vector<MapPoint*> > vvpMapPointMatches;
-    vvpMapPointMatches.resize(nInitialCandidates);  // 同样每个候选帧也都有自己的一个匹配的地图点
+    vvpMapPointMatches.resize(nInitialCandidates);
 
+    // 用 vector 存储每个候选帧应该被放弃(True）或者 保留(False)
     vector<bool> vbDiscarded;
-    vbDiscarded.resize(nInitialCandidates);         // 表示在计算的过程中哪些候选帧被标记为"放弃"了的
+    vbDiscarded.resize(nInitialCandidates);
 
-    int nCandidates=0; //candidates with enough matches
-    // 开始遍历每一个候选的闭环帧
+    // 完成 Step 1.0 的匹配后，被保留的候选帧数量
+    int nCandidates=0;
+
+    // Step 1. 遍历闭环候选帧集，筛选出与当前帧的匹配特征点数大于20的候选帧集合，并为每一个候选帧构造一个Sim3Solver
     for(int i=0; i<nInitialCandidates; i++)
     {
-        // STEP 1：从筛选的闭环候选帧中取出一帧关键帧pKF
+        // Step 1.1 从筛选的闭环候选帧中取出一帧关键帧pKF
         KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
 
-        // avoid that local mapping erase it while it is being processed in this thread
-        // 防止在LocalMapping中KeyFrameCulling函数将此关键帧作为冗余帧剔除
+        // 避免在LocalMapping中KeyFrameCulling函数将此关键帧作为冗余帧剔除
         pKF->SetNotErase();
 
+        // 如果候选帧质量不高，直接PASS
         if(pKF->isBad())
         {
-            vbDiscarded[i] = true;// 直接将该候选帧舍弃
+            vbDiscarded[i] = true;
             continue;
         }
 
-        // STEP 2：将当前帧mpCurrentKF与闭环候选关键帧pKF匹配
-        // 通过bow加速得到mpCurrentKF与pKF之间的匹配特征点，vvpMapPointMatches是匹配特征点对应的MapPoints,本质上来自于候选闭环帧
+        // Step 1.2 将当前帧 mpCurrentKF 与闭环候选关键帧pKF匹配
+        // 通过bow加速得到 mpCurrentKF 与 pKF 之间的匹配特征点
+        // vvpMapPointMatches 是匹配特征点对应的 MapPoints,本质上来自于候选闭环帧
         int nmatches = matcher.SearchByBoW(mpCurrentKF,pKF,vvpMapPointMatches[i]);
 
         // 匹配的特征点数太少，该候选帧剔除
@@ -375,24 +389,24 @@ bool LoopClosing::ComputeSim3()
         }
         else
         {
-            // if bFixScale is true, 6DoF optimization (stereo,rgbd), 7DoF otherwise (mono)
-            // 构造Sim3求解器
-            // 如果mbFixScale为true，则是6DoFf优化（双目 RGBD），如果是false，则是7DoF优化（单目）
+            // Step 1.3 为保留的候选帧构造Sim3求解器
+            // 如果 mbFixScale 为 true，则是6DoFf优化（双目 RGBD）
+            // 如果是false，则是7DoF优化（单目）
             Sim3Solver* pSolver = new Sim3Solver(mpCurrentKF,pKF,vvpMapPointMatches[i],mbFixScale);
-            pSolver->SetRansacParameters(0.99,20,300);// 至少20个inliers 300次迭代
+
+            // Sim3Solver Ransac 过程至少20个inliers 300次迭代
+            pSolver->SetRansacParameters(0.99,20,300);
             vpSim3Solvers[i] = pSolver;
         }
 
-        // 参与Sim3计算的候选关键帧数加1
+        // 保留的候选帧数量
         nCandidates++;
     }
 
-    bool bMatch = false;// 用于标记是否有一个候选帧通过Sim3的求解与优化
+    // 用于标记是否有一个候选帧通过Sim3Solver的求解与优化
+    bool bMatch = false;
 
-    // Perform alternatively RANSAC iterations for each candidate
-    // until one is succesful or all fail
-    // 一直循环所有的候选帧，每个候选帧迭代5次，如果5次迭代后得不到结果，就换下一个候选帧
-    // 直到有一个候选帧首次迭代成功bMatch为true，或者某个候选帧总的迭代次数超过限制，直接将它剔除
+    // Step 2.0 对每一个候选帧进行 RANSAC 迭代匹配，直到有一个候选帧匹配成功，或者全部失败
     while(nCandidates>0 && !bMatch)
     {
         // 遍历每一个候选帧
@@ -403,21 +417,25 @@ bool LoopClosing::ComputeSim3()
 
             KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
 
-            // Perform 5 Ransac Iterations
-            vector<bool> vbInliers;    // 标记经过RANSAC sim3 求解后,vvpMapPointMatches中的哪些作为内点
+            // 内点（Inliers）标志
+            // 即标记经过RANSAC sim3 求解后,vvpMapPointMatches中的哪些作为内点
+            vector<bool> vbInliers; 
+        
+            // 内点（Inliers）数量
             int nInliers;
-            bool bNoMore;// 这是局部变量，在pSolver->iterate(...)内进行初始化(由sim3Solver进行赋值操作)
-                        //? 具体含义? 如果在下面的这5次RANSAC操作中能够达到要求,那么后续过程中又无法达到要求,那么这里在什么时候才会置位?
-                        //? 是说之前的RABSAC过程和当前的过程如果相差不多甚至没有任何变化的时候,这个才会被置位吗?
 
-            // STEP 3：对步骤2中有较好的匹配的关键帧求取Sim3变换
+            // 是否到达了最优解
+            bool bNoMore;
+
+            // Step 2.1 取出从 Step 1.3 中为当前候选帧构建的 Sim3Solver 并开始迭代
             Sim3Solver* pSolver = vpSim3Solvers[i];
+
             // 最多迭代5次，返回的Scm是候选帧pKF到当前帧mpCurrentKF的Sim3变换（T12）
             cv::Mat Scm  = pSolver->iterate(5,bNoMore,vbInliers,nInliers);
 
             // If Ransac reachs max. iterations discard keyframe
             // 经过n次循环，每次迭代5次，总共迭代 n*5 次
-            // 总迭代次数达到最大限制还没有求出合格的Sim3变换，该候选帧剔除 ; 也有可能是因为Sim3Solver处理后的点的数目还没有进行RANSAC就已经小于期望的内点个数了
+            // 总迭代次数达到最大限制还没有求出合格的Sim3变换，该候选帧剔除
             if(bNoMore)
             {
                 vbDiscarded[i]=true;
@@ -435,40 +453,43 @@ bool LoopClosing::ComputeSim3()
                        vpMapPointMatches[j]=vvpMapPointMatches[i][j];
                 }
 
-                // STEP 4：通过步骤3求取的Sim3变换引导关键帧匹配弥补步骤2中的漏匹配
-                // [sR t;0 1]
-                cv::Mat R = pSolver->GetEstimatedRotation();// 候选帧pKF到当前帧mpCurrentKF的R（R12）
-                cv::Mat t = pSolver->GetEstimatedTranslation();// 候选帧pKF到当前帧mpCurrentKF的t（t12），当前帧坐标系下，方向由pKF指向当前帧
-                const float s = pSolver->GetEstimatedScale();// 候选帧pKF到当前帧mpCurrentKF的变换尺度s（s12）
+                // Step 2.2 通过步骤2.1求取的Sim3变换引导关键帧匹配弥补步骤1中的漏匹配
+                // 候选帧pKF到当前帧mpCurrentKF的R（R12），t（t12），变换尺度s（s12）
+                cv::Mat R = pSolver->GetEstimatedRotation();
+                cv::Mat t = pSolver->GetEstimatedTranslation();
+                const float s = pSolver->GetEstimatedScale();
+
                 // 查找更多的匹配（成功的闭环匹配需要满足足够多的匹配特征点数，之前使用SearchByBoW进行特征点匹配时会有漏匹配）
                 // 通过Sim3变换，确定pKF1的特征点在pKF2中的大致区域，同理，确定pKF2的特征点在pKF1中的大致区域
                 // 在该区域内通过描述子进行匹配捕获pKF1和pKF2之前漏匹配的特征点，更新匹配vpMapPointMatches
                 matcher.SearchBySim3(mpCurrentKF,pKF,vpMapPointMatches,s,R,t,7.5);
 
-                // STEP 5：Sim3优化，只要有一个候选帧通过Sim3的求解与优化，就跳出停止对其它候选帧的判断
+                // Step 2.3 Sim3优化，只要有一个候选帧通过Sim3的求解与优化，就跳出停止对其它候选帧的判断
                 // OpenCV的Mat矩阵转成Eigen的Matrix类型
                 g2o::Sim3 gScm(Converter::toMatrix3d(R),Converter::toVector3d(t),s);
+            
                 // 如果mbFixScale为true，则是6DoFf优化（双目 RGBD），如果是false，则是7DoF优化（单目）
                 // 优化mpCurrentKF与pKF对应的MapPoints间的Sim3，得到优化后的量gScm
-                const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);// 卡方chi2检验阈值10 //?
+                const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);
 
-                // If optimization is succesful stop ransacs and continue
+                // 如果优化成功，则停止 ransacs（即while循环）并继续下一步
                 if(nInliers>=20)
                 {
+                    // 为True时将不再进入 while循环
                     bMatch = true;
                     // mpMatchedKF就是最终闭环检测出来与当前帧形成闭环的关键帧
                     mpMatchedKF = pKF;
+
                     // 得到从世界坐标系到该候选帧的Sim3变换，Scale=1
                     g2o::Sim3 gSmw(Converter::toMatrix3d(pKF->GetRotation()),Converter::toVector3d(pKF->GetTranslation()),1.0);
+
                     // 得到g2o优化后从世界坐标系到当前帧的Sim3变换
                     mg2oScw = gScm*gSmw;
                     mScw = Converter::toCvMat(mg2oScw);
-
                     mvpCurrentMatchedPoints = vpMapPointMatches;
-                    break;// 只要有一个候选帧通过Sim3的求解与优化，就跳出停止对其它候选帧的判断
-                    // 这就放弃后面的所有候选帧了... 这样操作的目的还是为了节省时间,其实后面的操作中也还是不能够保证我们现在挑选出来的闭环关键帧就能够通过后面
-                    // 程序中设置的重重考验;而一旦不通过,那么无论后面的候选关键帧是否能够通过考验,都将会被直接取消以后参与到回环检测中的资格了
-                    // (当然如果某个关键帧已经和某个关键帧形成了闭环关系,它不会真正地被取消掉这个资格的)
+
+                    // 只要有一个候选帧通过Sim3的求解与优化，就跳出停止对其它候选帧的判断
+                    break;
                 }
             }
         }
@@ -487,20 +508,22 @@ bool LoopClosing::ComputeSim3()
         return false;
     }
 
-    // Retrieve MapPoints seen in Loop Keyframe and neighbors
-    // STEP 6：取出闭环匹配上关键帧的相连关键帧，得到它们的MapPoints放入 mvpLoopMapPoints
+    // Step 3.0：取出闭环匹配上关键帧的相连关键帧，得到它们的MapPoints放入 mvpLoopMapPoints
     // 注意是匹配上的那个关键帧：mpMatchedKF
     // 将mpMatchedKF相连的关键帧全部取出来放入 vpLoopConnectedKFs
     // 将vpLoopConnectedKFs的MapPoints取出来放入mvpLoopMapPoints
     vector<KeyFrame*> vpLoopConnectedKFs = mpMatchedKF->GetVectorCovisibleKeyFrames();
+
     // 包含闭环匹配关键帧本身,形成一个组
     vpLoopConnectedKFs.push_back(mpMatchedKF);
     mvpLoopMapPoints.clear();
+
     // 遍历这个组中的每一个关键帧
     for(vector<KeyFrame*>::iterator vit=vpLoopConnectedKFs.begin(); vit!=vpLoopConnectedKFs.end(); vit++)
     {
         KeyFrame* pKF = *vit;
         vector<MapPoint*> vpMapPoints = pKF->GetMapPointMatches();
+
         // 遍历其中一个关键帧的所有地图点
         for(size_t i=0, iend=vpMapPoints.size(); i<iend; i++)
         {
@@ -510,6 +533,7 @@ bool LoopClosing::ComputeSim3()
                 if(!pMP->isBad() && pMP->mnLoopPointForKF!=mpCurrentKF->mnId)
                 {
                     mvpLoopMapPoints.push_back(pMP);
+
                     // 标记该MapPoint被mpCurrentKF闭环时观测到并添加，避免重复添加
                     pMP->mnLoopPointForKF=mpCurrentKF->mnId;
                 }
@@ -518,15 +542,16 @@ bool LoopClosing::ComputeSim3()
     }
 
     // Find more matches projecting with the computed Sim3
-    // STEP 7：将闭环匹配上关键帧以及相连关键帧的MapPoints投影到当前关键帧进行投影匹配
+    // Step 4.0：将闭环匹配上关键帧以及相连关键帧的MapPoints投影到当前关键帧进行投影匹配
     // 根据投影查找更多的匹配（成功的闭环匹配需要满足足够多的匹配特征点数）
     // 根据Sim3变换，将每个mvpLoopMapPoints投影到mpCurrentKF上，并根据尺度确定一个搜索区域，
     // 根据该MapPoint的描述子与该区域内的特征点进行匹配，如果匹配误差小于TH_LOW即匹配成功，更新mvpCurrentMatchedPoints
     // mvpCurrentMatchedPoints将用于SearchAndFuse中检测当前帧MapPoints与匹配的MapPoints是否存在冲突
-    matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);// 搜索范围系数为10
+    // 搜索范围系数为10
+    matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);
 
     // If enough matches accept Loop
-    // STEP 8：判断当前帧与检测出的所有闭环关键帧是否有足够多的MapPoints匹配
+    // Step 5.0 判断当前帧与检测出的所有闭环关键帧是否有足够多的MapPoints匹配
     int nTotalMatches = 0;
     for(size_t i=0; i<mvpCurrentMatchedPoints.size(); i++)
     {
@@ -534,7 +559,7 @@ bool LoopClosing::ComputeSim3()
             nTotalMatches++;
     }
 
-    // STEP 9：清空mvpEnoughConsistentCandidates
+    // Step 6.0 清空mvpEnoughConsistentCandidates
     if(nTotalMatches>=40)
     {
         // 如果当前回环可靠,那么就取消 候选的优质连续关键帧中的所有帧 参与回环检测的资格,除了当前的回环关键帧
