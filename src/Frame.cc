@@ -671,7 +671,7 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
      */ 
     /** <li> 7.1 使用 MapPoint::GetNormal() 来获得平均视角(其实是一个单位向量\f$ \mathbf{P}_n \f$ ) </li> */
 	//获取平均视角，目测这个平均视角只是一个方向向量，模长为1，它表示了当前帧下观测到的点的分布情况
-	//TODO 但是这个平均视角估计是在map.cpp或者mapoint.cpp中计算的，还不是很清楚这个具体含义  其实现在我觉得就是普通的视角的理解吧
+	//TODO 但是这个平均视角是在mapoint.cpp中计算的，还不是很清楚这个具体含义  其实现在我觉得就是普通的视角的理解吧
     cv::Mat Pn = pMP->GetNormal();
 
 	/** <li> 7.2 计算当前视角和平均视角夹角的余弦值，注意平均视角为单位向量 </li>  \n
@@ -690,6 +690,7 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     /** <li> 8. 经过了上面的重重考验，说明这个地图点可以被重投影了。接下来需要记录关于这个地图点的一些信息：</li> <ul>*/
      
     //注意在特征点提取的过程中,图像金字塔的不同的层代表着特征点的不同的尺度
+    // 由于地图点与特征点没有匹配关系，所以地图点对应的图像金字塔的尺度信息需要预测。
     /** <li> 8.1 使用 MapPoint::PredictScale() 来预测该地图点在现有距离 \f$ dist \f$ 下时，在当前帧
      * 的图像金字塔中，所可能对应的尺度。\n
      * 其实也就是预测可能会在哪一层。这个信息将会被保存在这个地图点对象的 MapPoint::mnTrackScaleLevel 中。

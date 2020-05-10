@@ -832,7 +832,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
     // Compare only ORB that share the same node
 
     int nmatches=0;
-    vector<bool> vbMatched2(pKF2->N,false);
+    vector<bool> vbMatched2(pKF2->N,false);        // 避免重复匹配
     vector<int> vMatches12(pKF1->N,-1);
 
     vector<int> rotHist[HISTO_LENGTH];
@@ -843,6 +843,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
 
     // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
     // 将属于同一节点(特定层)的ORB特征进行匹配
+    // FeatureVector其实就是一个map类，那就可以直接获取它的迭代器进行遍历
     // FeatureVector的数据结构类似于：{(node1,feature_vector1) (node2,feature_vector2)...}
     // f1it->first对应node编号，f1it->second对应属于该node的所有特特征点编号
     DBoW2::FeatureVector::const_iterator f1it = vFeatVec1.begin();
@@ -911,6 +912,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                     const cv::Mat &d2 = pKF2->mDescriptors.row(idx2);
                     
                     // 计算idx1与idx2在两个关键帧中对应特征点的描述子距离
+                    //? dist是不是应该加个上限的约束，仅仅有下限约束，可能会引起一定量的误匹配
                     const int dist = DescriptorDistance(d1,d2);
                     
                     if(dist>TH_LOW || dist>bestDist)
@@ -919,17 +921,19 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                     // 步骤3.3：通过特征点索引idx2在pKF2中取出对应的特征点
                     const cv::KeyPoint &kp2 = pKF2->mvKeysUn[idx2];
 
+                    //? 为什么双目就不需要判断像素点到极点的距离的判断？
                     if(!bStereo1 && !bStereo2)
                     {
                         const float distex = ex-kp2.pt.x;
                         const float distey = ey-kp2.pt.y;
                         // 该特征点距离极点太近，表明kp2对应的MapPoint距离pKF1相机太近
                         // ? 这里100的单位是什么? mm? cm?
+                        // 这个100的单位应该是mm，这个距离是同一幅图像中两个像素点之间的距离，mm应该更合适
                         if(distex*distex+distey*distey<100*pKF2->mvScaleFactors[kp2.octave])
                             continue;
                     }
 
-                    // 步骤4：计算特征点kp2到kp1极线（kp1对应pKF2的一条极线）的距离是否小于阈值
+                    // 步骤4：计算特征点kp2到kp1极线（kp1对应pKF2的一条极线kp1对应pKF2的一条极线）的距离是否小于阈值
                     if(CheckDistEpipolarLine(kp1,kp2,F12,pKF2))
                     {
                         bestIdx2 = idx2;
@@ -937,26 +941,28 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                     }
                 }
 
-                // 步骤1、2、3、4总结下来就是：将左图像的每个特征点与右图像同一node节点的所有特征点
+                // 步骤1、2、3、4总结下来就是：将pKF1图像的每个特征点与pKF2图像同一node节点的所有特征点
                 // 依次检测，判断是否满足对极几何约束，满足约束就是匹配的特征点
                 
                 // 详见SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)函数步骤4
                 if(bestIdx2>=0)
                 {
                     const cv::KeyPoint &kp2 = pKF2->mvKeysUn[bestIdx2];
-                    vMatches12[idx1]=bestIdx2;
-                    vbMatched2[bestIdx2]=true;
+                    vMatches12[idx1]=bestIdx2;       // 类似于哈希表的用法
+                    vbMatched2[bestIdx2]=true;       // 避免重复匹配
                     nmatches++;
 
+                    // ORBmatcher构造函数默认检查旋转，mbCheckOrientation默认为true
                     if(mbCheckOrientation)
                     {
+                        // angle：角度，表示关键点的方向，通过Lowe大神的论文可以知道，为了保证方向不变形，SIFT算法通过对关键点周围邻域进行梯度运算，求得该点方向。-1为初值。
                         float rot = kp1.angle-kp2.angle;
                         if(rot<0.0)
                             rot+=360.0f;
                         int bin = round(rot*factor);
                         if(bin==HISTO_LENGTH)
                             bin=0;
-                        assert(bin>=0 && bin<HISTO_LENGTH);
+                        assert(bin>=0 && bin<HISTO_LENGTH);   // bin >=0也是确定满足的，rot < 360这个一定满足吧
                         rotHist[bin].push_back(idx1);
                     }
                 }
@@ -976,6 +982,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
     }
 
     // 旋转检查
+    //? 是不是为了保证旋转不变性，只保留旋转方向一致性最多的特征匹配对
     if(mbCheckOrientation)
     {
         int ind1=-1;
@@ -1869,8 +1876,8 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
 *
 * 功能:筛选出在直方图区间内特征点数量最多的三个特征点方向的索引
 *
-histo  两描述子旋转距离的直方图
-L  直方图宽度
+histo 两描述子旋转距离的直方图
+L     直方图宽度
 ind1  第一最小旋转距离的索引
 ind2  第二最小旋转距离的索引
 ind3  第三最小旋转距离的索引
@@ -1925,6 +1932,7 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
 
 
 // Bit set count operation from
+// Hamming distance：两个二进制串之间的汉明距离，指的是其不同位数的个数
 // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
 int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
 {

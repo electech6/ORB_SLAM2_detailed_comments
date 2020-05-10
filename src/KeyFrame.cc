@@ -78,7 +78,7 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
 // Bag of Words Representation 计算词袋表示
 void KeyFrame::ComputeBoW()
 {
-    // 如果没有提取词袋信息
+    // 只有当词袋向量或者节点和特征序号的特征向量为空的时候执行
     if(mBowVec.empty() || mFeatVec.empty())
     {
         // 那么就从当前帧的描述子中转换得到词袋信息
@@ -377,7 +377,7 @@ MapPoint* KeyFrame::GetMapPoint(const size_t &idx)
 /*
  * 更新图的连接
  * 
- * 1. 首先获得该关键帧的所有MapPoint点，统计观测到这些3d点的每个关键与其它所有关键帧之间的共视程度
+ * 1. 首先获得该关键帧的所有MapPoint点，统计观测到这些3d点的每个关键帧与其它所有关键帧之间的共视程度
  *    对每一个找到的关键帧，建立一条边，边的权重是该关键帧与当前关键帧公共3d点的个数。
  * 2. 并且该权重必须大于一个阈值，如果没有超过该阈值的权重，那么就只保留权重最大的边（与其它关键帧的共视程度比较高）
  * 3. 对这些连接按照权重从大到小进行排序，以方便将来的处理
@@ -401,7 +401,7 @@ void KeyFrame::UpdateConnections()
     //For all map points in keyframe check in which other keyframes are they seen
     //Increase counter for those keyframes
     // 通过3D点间接统计可以观测到这些3D点的所有关键帧之间的共视程度
-    // 即统计每一个关键帧都有多少关键帧与它存在共视关系，统计结果放在KFcounter
+    // 即统计每一个地图点都有多少关键帧与当前关键帧存在共视关系，统计结果放在KFcounter
     for(vector<MapPoint*>::iterator vit=vpMP.begin(), vend=vpMP.end(); vit!=vend; vit++)
     {
         MapPoint* pMP = *vit;
@@ -474,7 +474,7 @@ void KeyFrame::UpdateConnections()
     }
 
     // vPairs里存的都是相互共视程度比较高的关键帧和共视权重，接下来由大到小进行排序
-    sort(vPairs.begin(),vPairs.end());
+    sort(vPairs.begin(),vPairs.end());         // sort函数默认升序排列
     // 将排序后的结果分别组织成为两种数据类型
     list<KeyFrame*> lKFs;
     list<int> lWs;

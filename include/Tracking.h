@@ -85,7 +85,7 @@ public:
              KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor);
 
     // Preprocess the input and call Track(). Extract features and performs stereo matching.
-    //下面的函数都是对不同的传感器输入的图像进行处理(转换成为灰度图像),并且调用Tracking线程
+    // 下面的函数都是对不同的传感器输入的图像进行处理(转换成为灰度图像),并且调用Tracking线程
     /**
      * @brief 处理双目输入
      * 
@@ -179,7 +179,8 @@ public:
     // Current Frame
     ///追踪线程中有一个当前帧
     Frame mCurrentFrame;
-    ///还有当前帧的灰度图像 //? 提问,那么在双目输入和在RGBD输入的时候呢? 
+    ///> 还有当前帧的灰度图像 //? 提问,那么在双目输入和在RGBD输入的时候呢? 
+    ///>                        在双目输入和在RGBD输入时，为左侧图像的灰度图
     cv::Mat mImGray;
 
     // Initialization Variables (Monocular)
