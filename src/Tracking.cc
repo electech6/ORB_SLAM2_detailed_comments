@@ -91,8 +91,7 @@ Tracking::Tracking(
         mnLastRelocFrameId(0)                               //恢复为0,没有进行这个过程的时候的默认值
 {
     // Load camera parameters from settings file
-    
-    // step 1 从配置文件中加载相机参数
+    // Step 1 从配置文件中加载相机参数
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -162,7 +161,7 @@ Tracking::Tracking(
 
     // Load ORB parameters
 
-    // step 2 加载ORB特征点有关的参数,并新建特征点提取器
+    // Step 2 加载ORB特征点有关的参数,并新建特征点提取器
 
     // 每一帧提取的特征点数 1000
     int nFeatures = fSettings["ORBextractor.nFeatures"];
@@ -364,10 +363,9 @@ cv::Mat Tracking::GrabImageMonocular(
     const cv::Mat &im,          //单目图像
     const double &timestamp)    //时间戳
 {
-
     mImGray = im;
 
-    // step 1 ：将RGB或RGBA图像转为灰度图像
+    // Step 1 ：将RGB或RGBA图像转为灰度图像
     if(mImGray.channels()==3)
     {
         if(mbRGB)
@@ -383,7 +381,7 @@ cv::Mat Tracking::GrabImageMonocular(
             cvtColor(mImGray,mImGray,CV_BGRA2GRAY);
     }
 
-    // step 2 ：构造Frame
+    // Step 2 ：构造Frame
     if(mState==NOT_INITIALIZED || mState==NO_IMAGES_YET)// 没有成功初始化的前一个状态就是NO_IMAGES_YET
         mCurrentFrame = Frame(
             mImGray,
@@ -405,8 +403,9 @@ cv::Mat Tracking::GrabImageMonocular(
             mbf,
             mThDepth);
 
-    // step 3 ：跟踪
+    // Step 3 ：跟踪
     Track();
+
     //返回当前帧的位姿
     return mCurrentFrame.mTcw.clone();
 }
@@ -829,6 +828,7 @@ void Tracking::StereoInitialization()
                 // a.表示该MapPoint可以被哪个KeyFrame的哪个特征点观测到
                 pNewMP->AddObservation(pKFini,i);
                 // b.从众多观测到该MapPoint的特征点中挑选区分度最高的描述子
+                
                 //? 如何定义的这个区分度?
                 pNewMP->ComputeDistinctiveDescriptors();
                 // c.更新该MapPoint平均观测方向以及观测距离的范围
@@ -1950,6 +1950,7 @@ void Tracking::UpdateLocalKeyFrames()
         }
 
         mvpLocalKeyFrames.push_back(it->first);
+        
         // mnTrackReferenceForFrame防止重复添加局部关键帧
         //? 这里我可以理解成为,某个关键帧已经被设置为当前帧的 局部关键帧了吗?
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
@@ -2027,18 +2028,33 @@ void Tracking::UpdateLocalKeyFrames()
     }
 }
 
-//重定位过程
+/**
+ * @details 重定位过程
+ * 
+ * Step 1：计算当前帧特征点的Bow映射
+ * 
+ * Step 2：找到与当前帧相似的候选关键帧
+ * 
+ * Step 3：通过BoW进行匹配
+ * 
+ * Step 4：通过EPnP算法估计姿态
+ * 
+ * Step 5：通过PoseOptimization对姿态进行优化求解
+ * 
+ * Step 6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
+ */
 bool Tracking::Relocalization()
 {
     // Compute Bag of Words Vector
-    // step 1：计算当前帧特征点的Bow映射
+    // Step 1： 计算当前帧特征点的Bow映射
     mCurrentFrame.ComputeBoW();
 
     // Relocalization is performed when tracking is lost
     // Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
-    // step 2：找到与当前帧相似的候选关键帧
+    // Step 2：找到与当前帧相似的候选关键帧
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame);
-    //没有和当前帧相似的候选关键帧?完蛋,退出
+    
+    //如果没有候选关键帧，则退出
     if(vpCandidateKFs.empty())
         return false;
 
@@ -2050,9 +2066,11 @@ bool Tracking::Relocalization()
     //每个关键帧的解算器
     vector<PnPsolver*> vpPnPsolvers;
     vpPnPsolvers.resize(nKFs);
+
     //每个关键帧和当前帧中特征点的匹配关系
     vector<vector<MapPoint*> > vvpMapPointMatches;
     vvpMapPointMatches.resize(nKFs);
+    
     //放弃某个关键帧的标记
     vector<bool> vbDiscarded;
     vbDiscarded.resize(nKFs);
@@ -2070,7 +2088,7 @@ bool Tracking::Relocalization()
             vbDiscarded[i] = true;
         else
         {
-            // step 3：通过BoW进行匹配
+            // Step 3：通过BoW进行匹配
             int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i]);
             //如果和当前帧的匹配数小于15,那么只能放弃这个关键帧
             if(nmatches<15)
@@ -2097,7 +2115,7 @@ bool Tracking::Relocalization()
 
     // Alternatively perform some iterations of P4P RANSAC
     // Until we found a camera pose supported by enough inliers
-    //? 这里的 P4P RANSAC 是啥意思啊
+    //? 这里的 P4P RANSAC 是啥意思啊   @lishuwei0424:我认为是Epnp，每次迭代需要4个点
     //是否已经找到相匹配的关键帧的标志
     bool bMatch = false;
     ORBmatcher matcher2(0.9,true);
@@ -2115,12 +2133,14 @@ bool Tracking::Relocalization()
             // Perform 5 Ransac Iterations
             //内点标记
             vector<bool> vbInliers;     
+            
             //内点数
             int nInliers;
+            
             // 表示RANSAC已经没有更多的迭代次数可用 -- 也就是说数据不够好，RANSAC也已经尽力了。。。
             bool bNoMore;
 
-            // step 4：通过EPnP算法估计姿态
+            // Step 4：通过EPnP算法估计姿态
             PnPsolver* pSolver = vpPnPsolvers[i];
             cv::Mat Tcw = pSolver->iterate(5,bNoMore,vbInliers,nInliers);
 
@@ -2136,6 +2156,7 @@ bool Tracking::Relocalization()
             if(!Tcw.empty())
             {
                 Tcw.copyTo(mCurrentFrame.mTcw);
+                
                 //成功被再次找到的地图点的集合,其实就是经过RANSAC之后的内点
                 set<MapPoint*> sFound;
 
@@ -2152,20 +2173,21 @@ bool Tracking::Relocalization()
                         mCurrentFrame.mvpMapPoints[j]=NULL;
                 }
 
-                // step 5：通过PoseOptimization对姿态进行优化求解
+                // Step 5：通过PoseOptimization对姿态进行优化求解
                 //只优化位姿,不优化地图点的坐标;返回的是内点的数量
                 int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
 
-                //? 如果优化之后的内点数目不多,注意这里是直接跳过了本次循环,但是却没有放弃当前的这个关键帧
+                // ? 如果优化之后的内点数目不多,注意这里是直接跳过了本次循环,但是却没有放弃当前的这个关键帧
                 if(nGood<10)
                     continue;
+
                 //删除外点对应的地图点
                 for(int io =0; io<mCurrentFrame.N; io++)
                     if(mCurrentFrame.mvbOutlier[io])
                         mCurrentFrame.mvpMapPoints[io]=static_cast<MapPoint*>(NULL);
 
                 // If few inliers, search by projection in a coarse window and optimize again
-                // step 6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
+                // Step 6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
                 // 前面的匹配关系是用词袋匹配过程得到的
                 if(nGood<50)
                 {
@@ -2179,7 +2201,7 @@ bool Tracking::Relocalization()
                     //如果通过投影过程获得了比较多的特征点
                     if(nadditional+nGood>=50)
                     {
-                        //? 这么说在执行上面的 SearchByProjection 函数的时候, 地图点的信息已经更新了? 那么特征点呢? 有点晕 
+                        //根据投影匹配的结果，采用3D-2D pnp非线性优化求解
                         nGood = Optimizer::PoseOptimization(&mCurrentFrame);
 
                         // If many inliers but still not enough, search by projection again in a narrower window

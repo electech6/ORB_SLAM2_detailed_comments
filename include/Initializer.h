@@ -143,7 +143,7 @@ private:
      * @param[in] H21				从参考帧到当前帧的单应矩阵
      * @param[in] H12				从当前帧到参考帧的单应矩阵
      * @param[out] vbMatchesInliers	匹配好的特征点对的Inliers标记
-     * @param[in] sigma				估计误差
+     * @param[in] sigma				方差
      * @see
      * - Author's paper - IV. AUTOMATIC MAP INITIALIZATION （2）
      * - Multiple View Geometry in Computer Vision - symmetric transfer errors: 4.2.2 Geometric distance
@@ -186,8 +186,14 @@ private:
      * 
      * @see Multiple View Geometry in Computer Vision - Result 9.19 p259
      */
-    bool ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv::Mat &K,
-                      cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated);
+    bool ReconstructF(vector<bool> &vbMatchesInliers,
+                      cv::Mat &F21, cv::Mat &K,
+                      cv::Mat &R21,
+                      cv::Mat &t21,
+                      vector<cv::Point3f> &vP3D,
+                      vector<bool> &vbTriangulated,
+                      float minParallax,
+                      int minTriangulated);
 
     /**
      * @brief 从H恢复R t
@@ -209,8 +215,15 @@ private:
      * - Faugeras et al, Motion and structure from motion in a piecewise planar environment. International Journal of Pattern Recognition and Artificial Intelligence, 1988.
      * - Deeper understanding of the homography decomposition for vision-based control
      */
-    bool ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv::Mat &K,
-                      cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated);
+    bool ReconstructH(vector<bool> &vbMatchesInliers,
+                      cv::Mat &H21,
+                      cv::Mat &K,
+                      cv::Mat &R21,
+                      cv::Mat &t21,
+                      vector<cv::Point3f> &vP3D,
+                      vector<bool> &vbTriangulated,
+                      float minParallax,
+                      int minTriangulated);
 
     /**
      * @brief 给定投影矩阵P1,P2和图像上的点kp1,kp2，从而恢复3D坐标

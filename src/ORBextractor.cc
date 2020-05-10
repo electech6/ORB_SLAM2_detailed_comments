@@ -96,86 +96,77 @@ const int EDGE_THRESHOLD = 19;		///<算法生成的图像边
 
 /**
  * @brief 这个函数用于计算特征点的方向，这里是返回角度作为方向。
- * @details 计算方向。为了使得提取的特征点具有旋转不变性，需要计算每个特征点的方向。方法是计算以特征点为中心以像素为权值的圆形区域上的重心，以中心和重心的连线作为该特征点的方向。
- * @see https://blog.csdn.net/saber_altolia/article/details/52623513  
- * \n 视觉SLAM十四讲P135
- * @note 注意这个是全局的静态函数
- * @param[in] image     要进行操作的原图像（块）
- * @param[in] pt        要计算特征点方向的特征点的坐标
- * @param[in] u_max     图像块的每一行的u轴坐标边界（1/4）
- * @return float        角度，弧度制
+ * 计算特征点方向是为了使得提取的特征点具有旋转不变性。
+ * 方法是灰度质心法：以几何中心和灰度质心的连线作为该特征点方向
+ * @param[in] image     要进行操作的某层金字塔图像
+ * @param[in] pt        当前特征点的坐标
+ * @param[in] u_max     图像块的每一行的坐标边界 u_max
+ * @return float        返回特征点的角度，范围为[0,360)角度，精度为0.3°
  */
-static float IC_Angle(const Mat& image,			
-					  Point2f pt,  				
-					  const vector<int> & u_max)
+static float IC_Angle(const Mat& image, Point2f pt,  const vector<int> & u_max)
 {
-	//感觉这个函数中的内容其实就是视觉SLAM十四讲中p135页中介绍的特征点方向的计算。有机会看看原始文献玩儿。
-	
 	//图像的矩，前者是按照图像块的y坐标加权，后者是按照图像块的x坐标加权
     int m_01 = 0, m_10 = 0;
 
-	//这里是获得这个特征点所在的图像块的中心点指针，其实就是特征点像素指针
-	//注意了，center是指向这个图像块的中心点像素的
+	//获得这个特征点所在的图像块的中心点坐标灰度值的指针center
     const uchar* center = &image.at<uchar> (cvRound(pt.y), cvRound(pt.x));
 
     // Treat the center line differently, v=0
-	//这条中心线的计算需要特殊对待
+	//这条v=0中心线的计算需要特殊对待
+    //由于是中心行+若干行对，所以PATCH_SIZE应该是个奇数
     for (int u = -HALF_PATCH_SIZE; u <= HALF_PATCH_SIZE; ++u)
-		//注意这里的center下标可以是负的！中心水平线上的像素按x坐标加权， NOTICE 本行中x属于[-HALF_PATCH_SIZE,+HALF_PATCH_SIZE]
+		//注意这里的center下标u可以是负的！中心水平线上的像素按x坐标（也就是u坐标）加权
         m_10 += u * center[u];
 
-    // Go line by line in the circuI853lar patch  --  这里的circuI853lar是啥，打错了吧
-	//这里的step1表示这个二维图像中的行有几个字节。参考[https://blog.csdn.net/qianqing13579/article/details/45318279]
+    // Go line by line in the circular patch  
+	//这里的step1表示这个图像一行包含的字节总数。参考[https://blog.csdn.net/qianqing13579/article/details/45318279]
     int step = (int)image.step1();
-	//注意这里是以中心线为对称轴，然后对称地每成对的两行之间进行遍历，这样处理加快了计算速度
+	//注意这里是以v=0中心线为对称轴，然后对称地每成对的两行之间进行遍历，这样处理加快了计算速度
     for (int v = 1; v <= HALF_PATCH_SIZE; ++v)
     {
         // Proceed over the two lines
-		//本来m_01应该是一列一列地计算的，但是由于对称以及坐标x,y正负的原因，对于每列的计算来讲，本质上其实就是中心行
-		//以下的坐标的像素灰度减去中心行以上的坐标的像素灰度。而这里的遍历方式与之类似，不同的是一对行一对行地，计算每列这对行
-		//的像素灰度值之差。这里的v_sum累计的就是这一对行中，所有列的这个像素灰度值之差
+		//本来m_01应该是一列一列地计算的，但是由于对称以及坐标x,y正负的原因，可以一次计算两行
         int v_sum = 0;
-		//NOTICE 获取某行像素横坐标的最大范围，注意这里的图像块是圆形的！
+		// 获取某行像素横坐标的最大范围，注意这里的图像块是圆形的！
         int d = u_max[v];
-		//在坐标范围内挨个像素遍历（更准确的说法应该是，挨着两个像素、两个像素地遍历）
+		//在坐标范围内挨个像素遍历，实际是一次遍历2个
+        // 假设每次处理的两个点坐标，中心线上方为(x,y),中心线下方为(x,-y) 
+        // 对于某次待处理的两个点：m_10 = Σ x*I(x,y) =  x*I(x,y) + x*I(x,-y) = x*(I(x,y) + I(x,-y))
+        // 对于某次待处理的两个点：m_01 = Σ y*I(x,y) =  y*I(x,y) - y*I(x,-y) = y*(I(x,y) - I(x,-y))
         for (int u = -d; u <= d; ++u)
         {
 			//得到需要进行加运算和减运算的像素灰度值
-			//在中心线下方的是需要进行加运算的像素灰度值（站在m_01的立场上）
-            int val_plus = center[u + v*step], 
-				//在中心线上方的则是需要进行减运算的像素灰度值
-				val_minus = center[u - v*step];
-			//在y轴方向上的和就是这样计算的，这个只是中间结果
+			//val_plus：在中心线下方x=u时的的像素灰度值
+            //val_minus：在中心线上方x=u时的像素灰度值
+            int val_plus = center[u + v*step], val_minus = center[u - v*step];
+			//在v（y轴）上，2行所有像素灰度值之差
             v_sum += (val_plus - val_minus);
-			//x轴方向上的和则是这样计算，然后x坐标加权（这里遍历的时候x坐标也有正负符号），本质上相当于同时计算两行
+			//u轴（也就是x轴）方向上用u坐标加权和（u坐标也有正负符号），相当于同时计算两行
             m_10 += u * (val_plus + val_minus);
-        }//遍历完成了一对行
-        //将这一行上的和按照y坐标加权;而前面的中间行的y坐标为0所以和不加的效果是一样的（这里没有加）
+        }
+        //将这一行上的和按照y坐标加权
         m_01 += v * v_sum;
-    }//所有行对都遍历完成了
-    //NOTICE 其实由于是中心行+若干行对，所以PATCH_SIZE应该是个奇数
+    }
 
-    //计算方向，公式和视觉SLAM十四讲中的一样
-    //为了加快速度还使用了fastAtan2()函数
+    //为了加快速度还使用了fastAtan2()函数，输出为[0,360)角度，精度为0.3°
     return fastAtan2((float)m_01, (float)m_10);
 }
 
 ///乘数因子，一度对应着多少弧度
 const float factorPI = (float)(CV_PI/180.f);
-//计算ORB特征点的描述子，注意这个是全局的静态函数，只能是在本文件内被调用
+
 /**
- * @brief 计算ORB特征点的描述子
+ * @brief 计算ORB特征点的描述子。注意这个是全局的静态函数，只能是在本文件内被调用
  * @param[in] kpt       特征点对象
  * @param[in] img       提取出特征点的图像
- * @param[in] pattern   随机采样点集
+ * @param[in] pattern   预定义好的随机采样点集
  * @param[out] desc     用作输出变量，保存计算好的描述子，长度为32*8bit
  */
-static void computeOrbDescriptor(const KeyPoint& kpt,		//特征点对象
-                                 const Mat& img, 			//提取出特征点的图像
-								 const Point* pattern,		//随机采样点集
-                                 uchar* desc)				//用作输出变量，保存计算好的描述子
+static void computeOrbDescriptor(const KeyPoint& kpt,
+                                 const Mat& img, const Point* pattern,
+                                 uchar* desc)
 {
-	//得到特征点的角度，用弧度制表示
+	//得到特征点的角度，用弧度制表示。kpt.angle是角度制，范围为[0,360)度
     float angle = (float)kpt.angle*factorPI;
 	//然后计算这个角度的余弦值和正弦值
     float a = (float)cos(angle), b = (float)sin(angle);
@@ -185,12 +176,13 @@ static void computeOrbDescriptor(const KeyPoint& kpt,		//特征点对象
 	//获得图像的每行的字节数
     const int step = (int)img.step;
 
-	//NOTICE 原始的BRIEF描述子不具有方向信息，这里就是通过加入了特征点的方向来计算描述子，称之为Steer BRIEF描述子使其具有较好
-	//的旋转不变特性。具体地，在计算的时候需要将这里选取的随机点点集的x轴方向旋转到特征点的方向。
-	//获得随机“相对点集”中某个idx所对应的点的灰度,这里旋转前后的坐标推导是可以通过转换成为极坐标的形式得出来的
+	//原始的BRIEF描述子不具有方向信息，通过加入特征点的方向来计算描述子，称之为Steer BRIEF，具有较好旋转不变特性
+	//具体地，在计算的时候需要将这里选取的随机点点集的x轴方向旋转到特征点的方向。
+	//获得随机“相对点集”中某个idx所对应的点的灰度,这里旋转前坐标为(x,y), 旋转后坐标(x',y')推导:
+    // x'= xcos(θ) - ysin(θ),  y'= xsin(θ) + ycos(θ)
     #define GET_VALUE(idx) \
-        center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + \
-               cvRound(pattern[idx].x*a - pattern[idx].y*b)]
+        center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + \        // y'* step
+               cvRound(pattern[idx].x*a - pattern[idx].y*b)]                // x'
 
 	//brief描述子由32*8位组成
 	//其中每一位是来自于两个像素点灰度的直接比较，所以每比较出8bit结果，需要16个随机点，这也就是为什么pattern需要+=16的原因
@@ -606,26 +598,22 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
 
 
 /**
- * @brief 计算特征点s的方向
- * @detials 注意这个也不是类的成员函数
- * @param[in] image         特征点所在的图像（其实就是每一层的图像）
- * @param[in] keypoints     存储有特征点的vector
- * @param[in] umax          以及每个特征点所在图像区块的每行的边界 u_max 组成的vector
+ * @brief 计算特征点的方向
+ * @param[in] image                 特征点所在当前金字塔的图像
+ * @param[in & out] keypoints       特征点向量
+ * @param[in] umax                  每个特征点所在图像区块的每行的边界 u_max 组成的vector
  */
-static void computeOrientation(
-	const Mat& image, 				//特征点所在的图像（其实就是图像金字塔中每一层的图像）
-	vector<KeyPoint>& keypoints, 	//存储有特征点的vector
-	const vector<int>& umax)		//以及每个特征点所在图像区块的每行的边界u_max组成的vector
+static void computeOrientation(const Mat& image, vector<KeyPoint>& keypoints, const vector<int>& umax)
 {
-	//遍历完所有的特征点
+	// 遍历所有的特征点
     for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
          keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint)
     {
-		//计算这个特征点的方向，其实就是简单的函数调用
+		// 调用IC_Angle 函数计算这个特征点的方向
         keypoint->angle = IC_Angle(image, 			//特征点所在的图层的图像
-								   keypoint->pt, 	//特征点在这张图像中的坐标subl
-								   umax);			//以及图像区块的边界
-    }//遍历完成所有的特征点
+								   keypoint->pt, 	//特征点在这张图像中的坐标
+								   umax);			//每个特征点所在图像区块的每行的边界 u_max 组成的vector
+    }
 }
 
 
@@ -1201,7 +1189,7 @@ void ORBextractor::ComputeKeyPointsOctTree(
         // Add border to coordinates and scale information
 		//获取剔除过程后保留下来的特征点数目
         const int nkps = keypoints.size();
-		//然后开始遍历这些特征点
+		//然后开始遍历这些特征点，恢复其在当前图层图像坐标系下的坐标
         for(int i=0; i<nkps ; i++)
         {
 			//对每一个保留下来的特征点，恢复到相对于当前图层“边缘扩充图像下”的坐标系的坐标
@@ -1211,8 +1199,8 @@ void ORBextractor::ComputeKeyPointsOctTree(
             keypoints[i].octave=level;
 			//记录计算方向的patch，缩放后对应的大小， 又被称作为特征点半径
             keypoints[i].size = scaledPatchSize;
-        }//开始遍历这些保留下来的特征点，恢复其在当前图层图像坐标系下的坐标
-    }//遍历所有层的图像
+        }
+    }
 
     // compute orientations
     //然后计算这些特征点的方向信息，注意这里还是分层计算的
@@ -1539,17 +1527,15 @@ void ORBextractor::ComputeKeyPointsOld(
 
 //注意这是一个不属于任何类的全局静态函数，static修饰符限定其只能够被本文件中的函数调用
 /**
- * @brief 计算某张图像上特征点的描述子
+ * @brief 计算某层金字塔图像上特征点的描述子
  * 
- * @param[in] image         某张图像
- * @param[in] keypoints     特征点vector容器
- * @param[in] descriptors   描述子
- * @param[in] pattern       计算描述子使用的随机点集
+ * @param[in] image                 某层金字塔图像
+ * @param[in] keypoints             特征点vector容器
+ * @param[out] descriptors          描述子
+ * @param[in] pattern               计算描述子使用的固定随机点集
  */
-static void computeDescriptors(const Mat& image, 				//某张图像
-							   vector<KeyPoint>& keypoints, 	//特征点vector容器
-							   Mat& descriptors,				//描述子
-                               const vector<Point>& pattern)	//计算描述子使用的随机点集
+static void computeDescriptors(const Mat& image, vector<KeyPoint>& keypoints, Mat& descriptors,
+                               const vector<Point>& pattern)
 {
 	//清空保存描述子信息的容器
     descriptors = Mat::zeros((int)keypoints.size(), 32, CV_8UC1);
@@ -1563,42 +1549,41 @@ static void computeDescriptors(const Mat& image, 				//某张图像
 							 descriptors.ptr((int)i));	//提取出来的描述子的保存位置
 }
 
-//重载括号运算符
-//关键是为什么要重载括号运算符啊，这个是有什么目的吗？ --  目前看应该就是..好玩
-void ORBextractor::operator()( 
-		InputArray _image, 				//输入图像
-		InputArray _mask, 				//用于辅助进行图像处理的掩膜
-		vector<KeyPoint>& _keypoints,	//特征点vector容器
-        OutputArray _descriptors)		//以及用于输出的描述子mat
+/**
+ * @brief 用仿函数（重载括号运算符）方法来计算图像特征点
+ * 
+ * @param[in] _image                    输入原始图的图像
+ * @param[in] _mask                     掩膜mask
+ * @param[in & out] _keypoints                存储特征点关键点的向量
+ * @param[in & out] _descriptors              存储特征点描述子的矩阵
+ */
+void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,
+                      OutputArray _descriptors)
 { 
-	
-	//==================准备阶段=====================
-	//如果图像为空，那么就跳过这个操作
+	// Step 1 检查图像有效性。如果图像为空，那么就直接返回
     if(_image.empty())
         return;
 
 	//获取图像的大小
     Mat image = _image.getMat();
-	//判断图像的格式是否正确
+	//判断图像的格式是否正确，要求是单通道灰度值
     assert(image.type() == CV_8UC1 );
 
     // Pre-compute the scale pyramid
-    // 构建图像金字塔
+    // Step 2 构建图像金字塔
     ComputePyramid(image);
 
-	//==================特征点提取和分配=====================
-    // 计算每层图像的兴趣点
-	//注意这里设计的神奇之处，上面所有函数形参中的allKeypoints本质上都是来源于这里的allkeypoint,关键是这个变量在这里还是一个局部变量
-	//实际上在最后处理的时候，是将这个变量中存储的所有特征点复制到返回用的vector中，达到传递当前图像中特征点的目的
+    // Step 3 计算图像的特征点，并且将特征点进行均匀化。均匀的特征点可以提高位姿计算精度
+	// 存储所有的特征点，注意此处为二维的vector，第一维存储的是金字塔的层数，第二维存储的是那一层金字塔图像里提取的所有特征点
     vector < vector<KeyPoint> > allKeypoints; 
-    //使用八叉树的方式计算每层图像的特征点并进行分配
+    //使用四叉树的方式计算每层图像的特征点并进行分配
     ComputeKeyPointsOctTree(allKeypoints);
-	//这里是使用传统的方法提取并平均分配图像的特征点。
+
+	//使用传统的方法提取并平均分配图像的特征点，作者并未使用
     //ComputeKeyPointsOld(allKeypoints);
 
 	
-	//==================描述子计算=====================
-	//保存描述子用的变量
+	// Step 4 拷贝图像描述子到新的矩阵descriptors
     Mat descriptors;
 
 	//统计整个图像金字塔中的特征点
@@ -1619,10 +1604,9 @@ void ORBextractor::operator()(
 							32, 			//矩阵的列数，对应为使用32*8=256位描述子
 							CV_8U);			//矩阵元素的格式
 		//获取这个描述子的矩阵信息
-		//TODO 为什么不是直接在参数_descriptors上对矩阵内容进行修改，而是重新新建了一个变量，复制矩阵后，
-		//在这个新建变量的基础上进行修改？
+		// ?为什么不是直接在参数_descriptors上对矩阵内容进行修改，而是重新新建了一个变量，复制矩阵后，在这个新建变量的基础上进行修改？
         descriptors = _descriptors.getMat();
-    }//查看本图像金字塔中是否有特征点
+    }
 
     //清空用作返回特征点提取结果的vector容器
     _keypoints.clear();
@@ -1640,55 +1624,55 @@ void ORBextractor::operator()(
 		//本层的特征点数
         int nkeypointsLevel = (int)keypoints.size();
 
-		//如果设定是本层提取特征点0个，
+		//如果特征点数目为0，跳出本次循环，继续下一层金字塔
         if(nkeypointsLevel==0)
-			//那么就跳过本层的处理
             continue;
 
-        // preprocess the resized image 对图像进行高斯模糊
-		//首先得到对当前层图像的拷贝
+        // preprocess the resized image 
+        //  Step 5 对图像进行高斯模糊
+		// 深拷贝当前金字塔所在层级的图像
         Mat workingMat = mvImagePyramid[level].clone();
-		//进行高斯模糊，原理目前自己还不清楚，但是暂时先不深究
-		//NOTICE 提取特征点的时候，使用的是清晰的原图像；然后再计算描述子的时候，为了避免图像噪声的影响，使用了高斯模糊
+
+		// 注意：提取特征点的时候，使用的是清晰的原图像；这里计算描述子的时候，为了避免图像噪声的影响，使用了高斯模糊
         GaussianBlur(workingMat, 		//源图像
 					 workingMat, 		//输出图像
-					 Size(7, 7), 		//高斯滤波器模版大小
-					 2, 				//高斯滤波在横向上的滤波系数
-					 2, 				//高斯滤波在纵向上的滤波系数
+					 Size(7, 7), 		//高斯滤波器kernel大小，必须为正的奇数
+					 2, 				//高斯滤波在x方向的标准差
+					 2, 				//高斯滤波在y方向的标准差
 					 BORDER_REFLECT_101);//边缘拓展点插值类型
 
         // Compute the descriptors 计算描述子
-		//desc存储当前图层的描述子
+		// desc存储当前图层的描述子
         Mat desc = descriptors.rowRange(offset, offset + nkeypointsLevel);
-		//计算描述子
+		// Step 6 计算高斯模糊后图像的描述子
         computeDescriptors(workingMat, 	//高斯模糊之后的图层图像
 						   keypoints, 	//当前图层中的特征点集合
 						   desc, 		//存储计算之后的描述子
 						   pattern);	//随机采样点集
 
-		//更新偏移量的值
+		// 更新偏移量的值 
         offset += nkeypointsLevel;
 
         // Scale keypoint coordinates
-		//对特征点的坐标进行恢复（这里说的恢复是直接恢复到最底层图像上的坐标了）
-		//所以下面的条件就是说，对于第0层的图像特征点，他们的坐标就不需要再进行恢复了
+		// Step 6 对非第0层图像中的特征点的坐标恢复到第0层图像（原图像）的坐标系下
+        // ? 得到所有层特征点在第0层里的坐标放到_keypoints里面
+		// 对于第0层的图像特征点，他们的坐标就不需要再进行恢复了
         if (level != 0)
         {
-			//获取当前图层上的缩放系数
-            float scale = mvScaleFactor[level]; //getScale(level, firstLevel, scaleFactor);
-            //遍历本层所有的特征点
+			// 获取当前图层上的缩放系数
+            float scale = mvScaleFactor[level];
+            // 遍历本层所有的特征点
             for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
                  keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint)
-				//对于这里的图层来讲恢复坐标很简单，直接乘缩放倍数就可以了～
+				// 特征点本身直接乘缩放倍数就可以了
                 keypoint->pt *= scale;
-        }//对非第0层图像中的特征点的坐标恢复到第0层图像的坐标系下
+        }
         
         // And add the keypoints to the output
-        //并且将当前图层计算出来的特征点添加到输出向量中
-        //keypoint其实是对allkeypoints中每层图像中特征点vector的一个引用，其实allkeypoints中的所有特征点数据就是在这里
-        //被转存到输出的参数向量中的
+        // 将keypoints中内容插入到_keypoints 的末尾
+        // keypoint其实是对allkeypoints中每层图像中特征点的引用，这样allkeypoints中的所有特征点在这里被转存到输出的_keypoints
         _keypoints.insert(_keypoints.end(), keypoints.begin(), keypoints.end());
-    }//对所有的图层进行遍历，计算描述子并且进行特征点的坐标恢复
+    }
 }
 
 /**
