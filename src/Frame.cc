@@ -105,39 +105,23 @@ Frame::Frame(const Frame &frame)
 
 
 /**
- * @brief 双目帧的构造函数
+ * @brief 为双目相机准备的构造函数
  * 
- * @param[in] imLeft 
- * @param[in] imRight 
- * @param[in] timeStamp 
- * @param[in] extractorLeft 
- * @param[in] extractorRight 
- * @param[in] voc 
- * @param[in] K 
- * @param[in] distCoef 
- * @param[in] bf 
- * @param[in] thDepth 
+ * @param[in] imLeft            左目图像
+ * @param[in] imRight           右目图像
+ * @param[in] timeStamp         时间戳
+ * @param[in] extractorLeft     左目图像特征点提取器句柄
+ * @param[in] extractorRight    右目图像特征点提取器句柄
+ * @param[in] voc               ORB字典句柄
+ * @param[in] K                 相机内参矩阵
+ * @param[in] distCoef          相机去畸变参数
+ * @param[in] bf                相机基线长度和焦距的乘积
+ * @param[in] thDepth           远点和近点的深度区分阈值
+ *  
  */
-Frame::Frame(const cv::Mat &imLeft, 			//左目图像
-			 const cv::Mat &imRight, 			//右目图像
-			 const double &timeStamp, 			//时间戳
-			 ORBextractor* extractorLeft, 		//左侧的特征点提取器句柄
-			 ORBextractor* extractorRight, 		//右侧图像的特征点提取器句柄
-			 ORBVocabulary* voc, 				//ORB字典句柄
-			 cv::Mat &K, 						//相机的内参数矩阵
-			 cv::Mat &distCoef, 				//相机的去畸变参数
-			 const float &bf, 					//baseline*f
-			 const float &thDepth) 				//远点、近点的深度区分阈值
-    :mpORBvocabulary(voc),						//下面是对类的成员变量进行初始化
-     mpORBextractorLeft(extractorLeft),
-     mpORBextractorRight(extractorRight), 
-     mTimeStamp(timeStamp), 
-     mK(K.clone()),								//注意这里是深拷贝
-     mDistCoef(distCoef.clone()), 				//注意这里是深拷贝
-     mbf(bf), 
-     mb(0), 									//这里将双目相机的基线设置为0其实没有什么道理，因为在其构造函数中mb还是会被正确计算的
-     mThDepth(thDepth),
-     mpReferenceKF(static_cast<KeyFrame*>(NULL))//NOTICE 暂时先不设置参考关键帧
+Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+    :mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
+     mpReferenceKF(static_cast<KeyFrame*>(NULL))
 {
     // Step 1 帧的ID 自增
     mnId=nNextId++;
@@ -223,35 +207,21 @@ Frame::Frame(const cv::Mat &imLeft, 			//左目图像
 }
 
 /**
- * @brief RGBD 帧的构造函数
+ * @brief 为RGBD相机准备的帧构造函数
  * 
- * @param[in] imGray 
- * @param[in] imDepth 
- * @param[in] timeStamp 
- * @param[in] extractor 
- * @param[in] voc 
- * @param[in] K 
- * @param[in] distCoef 
- * @param[in] bf 
- * @param[in] thDepth 
+ * @param[in] imGray        对RGB图像灰度化之后得到的灰度图像
+ * @param[in] imDepth       深度图像
+ * @param[in] timeStamp     时间戳
+ * @param[in] extractor     特征点提取器句柄
+ * @param[in] voc           ORB特征点词典的句柄
+ * @param[in] K             相机的内参数矩阵
+ * @param[in] distCoef      相机的去畸变参数
+ * @param[in] bf            baseline*bf
+ * @param[in] thDepth       远点和近点的深度区分阈值
  */
-Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
-			 const cv::Mat &imDepth, 	//深度图像
-			 const double &timeStamp, 	//时间戳
-			 ORBextractor* extractor,	//ORB特征提取器句柄
-			 ORBVocabulary* voc, 		//ORB字典句柄
-			 cv::Mat &K, 				//相机的内参数矩阵
-			 cv::Mat &distCoef, 		//相机的去畸变参数
-			 const float &bf, 			//baseline*f
-			 const float &thDepth)		//区分远近点的深度阈值
-    :mpORBvocabulary(voc),
-     mpORBextractorLeft(extractor),
-     mpORBextractorRight(static_cast<ORBextractor*>(NULL)),	//实际上这里没有使用ORB特征点提取器
-     mTimeStamp(timeStamp), 
-     mK(K.clone()),
-     mDistCoef(distCoef.clone()), 
-     mbf(bf), 
-     mThDepth(thDepth)
+Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
     // Step 1 帧的ID 自增
     mnId=nNextId++;

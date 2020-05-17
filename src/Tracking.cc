@@ -261,7 +261,7 @@ cv::Mat Tracking::GrabImageStereo(
             cvtColor(imGrayRight,imGrayRight,CV_BGR2GRAY);
         }
     }
-    //NOTE 这里考虑得十分周全,甚至连四通道的图像都考虑到了
+    //NOTE 这里考虑得十分周全,甚至脸四通道的图像都考虑到了
     else if(mImGray.channels()==4)
     {
         if(mbRGB)
@@ -278,8 +278,8 @@ cv::Mat Tracking::GrabImageStereo(
 
     // step 2 ：构造Frame
     mCurrentFrame = Frame(
-        mImGray,                //左目图像，此为灰度图
-        imGrayRight,            //右目图像，此为灰度图
+        mImGray,                //左目图像
+        imGrayRight,            //右目图像
         timestamp,              //时间戳
         mpORBextractorLeft,     //左目特征提取器
         mpORBextractorRight,    //右目特征提取器
@@ -410,14 +410,13 @@ cv::Mat Tracking::GrabImageMonocular(
     return mCurrentFrame.mTcw.clone();
 }
 
-/*
- * @brief Main tracking function. It is independent of the input sensor.
- *
- * Tracking 线程
+/**
+ * @brief Tracking 线程
+ * 
  */
 void Tracking::Track()
 {
-    // NOTICE 敲黑板: track包含两部分：估计运动、跟踪局部地图
+    // track包含两部分：估计运动、跟踪局部地图
     
     // mState为tracking的状态机
     // SYSTME_NOT_READY, NO_IMAGE_YET, NOT_INITIALIZED, OK, LOST
@@ -437,7 +436,7 @@ void Tracking::Track()
     // -- 还是有足够的时间更新地图的
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
-    // step 1：初始化
+    // Step 1 初始化
     if(mState==NOT_INITIALIZED)
     {
         if(mSensor==System::STEREO || mSensor==System::RGBD)
@@ -454,7 +453,7 @@ void Tracking::Track()
         if(mState!=OK)
             return;
     }
-    // s}tep 2：跟踪
+    // Step 2 跟踪
     else
     {
         // System is initialized. Track Frame.
@@ -478,7 +477,7 @@ void Tracking::Track()
                 // Local Mapping might have changed some MapPoints tracked in last frame
                 // 检查并更新上一帧被替换的MapPoints
                 // 更新Fuse函数和SearchAndFuse函数替换的MapPoints
-                // 由于追踪线程需要使用上一帧的信息,而局部建图线程则可能会对原有的地图点进行替换.在这里进行检查
+                //由于追踪线程需要使用上一帧的信息,而局部建图线程则可能会对原有的地图点进行替换.在这里进行检查
                 CheckReplacedInLastFrame();
 
                 // step 2.1：跟踪上一帧或者参考帧或者重定位
@@ -489,10 +488,10 @@ void Tracking::Track()
                 // mnLastRelocFrameId 上一次重定位的那一帧
                 if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
                 {
-                    // 对于上述两个条件我的理解:
-                    // 第一个条件,如果运动模型为空,那么就意味着之前已经..跟丢了
-                    // 第二个条件,就是如果当前帧紧紧地跟着在重定位的帧的后面,那么我们可以认为,通过在当前帧和发生重定位的帧(作为参考关键帧?)的基础上,
-                    // 我们可以恢复得到相机的位姿
+                    //对于上述两个条件我的理解:
+                    //第一个条件,如果运动模型为空,那么就意味着之前已经..跟丢了
+                    //第二个条件,就是如果当前帧紧紧地跟着在重定位的帧的后面,那么我们可以认为,通过在当前帧和发生重定位的帧(作为参考关键帧?)的基础上,
+                    //我们可以恢复得到相机的位姿
 
                     // 将上一帧的位姿作为当前帧的初始位姿
                     // 通过BoW的方式在参考帧中找当前帧特征点的匹配点
@@ -891,6 +890,7 @@ void Tracking::MonocularInitialization()
         // Set Reference Frame
         // 单目初始帧的特征点数必须大于100
         if(mCurrentFrame.mvKeys.size()>100)
+        
         {
             // step 1：得到用于初始化的第一帧，初始化需要两帧
             mInitialFrame = Frame(mCurrentFrame);
@@ -1154,11 +1154,11 @@ void Tracking::CheckReplacedInLastFrame()
     for(int i =0; i<mLastFrame.N; i++)
     {
         MapPoint* pMP = mLastFrame.mvpMapPoints[i];
-        // 如果这个地图点存在
+        //如果这个地图点存在
         if(pMP)
         {
-            // 获取其是否被替换,以及替换后的点
-            // 这也是程序不选择将这个地图点删除的原因，因为删除了就。。。段错误了
+            //获取其是否被替换,以及替换后的点
+            // 这也是程序不选择间这个地图点删除的原因，因为删除了就。。。段错误了
             MapPoint* pRep = pMP->GetReplaced();
             if(pRep)
             {   
