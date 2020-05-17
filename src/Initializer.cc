@@ -965,40 +965,41 @@ bool Initializer::ReconstructF(
      * \n 详细的操作步骤如下: <ul>
 	 */ 
     
-    /** <li> 统计被标记为Inlier的特征点对数 </li> */
+    //  统计有效匹配点个数，并用 N 表示
+    //  vbMatchesInliers 中存储匹配点对是否是有效
     int N=0;
-	//开始遍历
     for(size_t i=0, iend = vbMatchesInliers.size() ; i<iend; i++)
-		//如果当前被遍历的特征点对被标记，
-        if(vbMatchesInliers[i])
-			//那么计数器++
-            N++;
+        if(vbMatchesInliers[i]) N++;
 
-    // Compute Essential Matrix from Fundamental Matrix
-    /** <li> 根据基础矩阵和相机的内参数矩阵计算本质矩阵 </li> */
+    // 根据基础矩阵和相机的内参数矩阵计算本质矩阵
     cv::Mat E21 = K.t()*F21*K;
-	//emmm过会儿存放计算结果要用到的
+
+    // 定义本质矩阵分解结果，形成四组解,分别是：
+    // (R1, t) (R1, -t) (R2, t) (R2, -t)
     cv::Mat R1, R2, t;
-    // Recover the 4 motion hypotheses
-    /** <li> 调用自己建立的解析函数 Initializer::DecomposeE()，从本质矩阵求解两个R解和两个t解，不过由于两个t解互为相反数，因此这里先只获取一个 </li> 
-     * \n 虽然这个函数对t有归一化，但并没有决定单目整个SLAM过程的尺度. 因为 CreateInitialMapMonocular 函数对3D点深度会缩放，然后反过来对 t 有改变.
-    */
+
+    // 调用解析函数 Initializer::DecomposeE()，从本质矩阵求解两个R解和两个t解，
+    // 不过由于两个t解互为相反数，因此这里先只获取一个
+    // 虽然这个函数对t有归一化，但并没有决定单目整个SLAM过程的尺度. 
+    // 因为 CreateInitialMapMonocular 函数对3D点深度会缩放，然后反过来对 t 有改变.
     DecomposeE(E21,R1,R2,t);  
-	//这里计算另外一个t解
     cv::Mat t1=t;
     cv::Mat t2=-t;
 
     // Reconstruct with the 4 hyphoteses and check
-    /** <li> 根据计算的解组合成为四种情况,并依次调用 Initializer::CheckRT() 进行检查,得到可以进行三角化测量的点的数目 </li> */
-	//验证
-	//这四个向量对应着解的四种组合情况，分别清楚各自情况下三角化测量之后的特征点空间坐标
+    // 从上面求解的4种R和T的组合中，选出最佳组合
+    // 原理：若某一组合使恢复得到的3D点位于相机正前方的数量最多，那么该组合就是最佳组合
+    // 实现：根据计算的解组合成为四种情况,并依次调用 Initializer::CheckRT() 进行检查,得到可以进行三角化测量的点的数目
+	// 定义四组解分别在对同一匹配点集进行三角化测量之后的特征点空间坐标
     vector<cv::Point3f> vP3D1, vP3D2, vP3D3, vP3D4;
-	//这四个标记用的向量则保存了哪些点能够被三角化测量的标记
+
+	// 定义四组解分别对同一匹配点集的有效三角化结果，True or False
     vector<bool> vbTriangulated1,vbTriangulated2,vbTriangulated3, vbTriangulated4;
-	//每种解的情况对应的比较大的特征点对视差角
+
+	// 定义四种解对应的比较大的特征点对视差角
     float parallax1,parallax2, parallax3, parallax4;
 
-	//检查每种解，会返回一个数值，这个数值是3D点在摄像头前方且投影误差小于阈值的3D点个数，下文我们称之为good点吧
+	// 使用同一组匹配点检查四组解，并范围当前解重建的3D点在摄像头前方且投影误差小于阈值的个数，记为有效3D点个数
     int nGood1 = CheckRT(R1,t1,							//当前组解
 						 mvKeys1,mvKeys2,				//参考帧和当前帧中的特征点
 						 mvMatches12, vbMatchesInliers,	//特征点的匹配关系和Inliers标记
@@ -1011,20 +1012,20 @@ bool Initializer::ReconstructF(
     int nGood3 = CheckRT(R1,t2,mvKeys1,mvKeys2,mvMatches12,vbMatchesInliers,K, vP3D3, 4.0*mSigma2, vbTriangulated3, parallax3);
     int nGood4 = CheckRT(R2,t2,mvKeys1,mvKeys2,mvMatches12,vbMatchesInliers,K, vP3D4, 4.0*mSigma2, vbTriangulated4, parallax4);
 
-    /** <li> 选取最大可三角化测量的点的数目  maxGood </li> */
+    // 选取最大可三角化测量的点的数目maxGood
     int maxGood = max(nGood1,max(nGood2,max(nGood3,nGood4)));
 
-	//清空函数的参数，我们要准备进行输出了
+	// 释放变量，并在后面赋值为最佳R和T
     R21 = cv::Mat();
     t21 = cv::Mat();
 
-    /** <li> 确定最小的可以三角化的点数为 0.9倍的内点数. 如果给定的数目笔这个还大,就用大的. </li> */
-    int nMinGood = max(static_cast<int>(0.9*N),minTriangulated);
+    // 确定最小的可以三角化的点数为 0.9倍的内点数. 
+    // 如果给定的数目笔这个还大,就用大的.
+    int nMinGood = max(static_cast<int>(0.9*N), minTriangulated);
 
-	//统计有多少组可行解的，这里暂时称之为“可行解计数变量”吧
+	// 统计四组解中能重建有效3D坐标的解个数
+    // 此处的有效是指：当前解能重建的有效3D点个数 > 0.7 * maxGood
     int nsimilar = 0;
-	
-    /** <li> 如果在某种情况下观测到的可三角化测量的点占到了绝大多数(>0.7maxGood)，那么“可行解计数”变量++ </li> */
     if(nGood1>0.7*maxGood)
         nsimilar++;
     if(nGood2>0.7*maxGood)
@@ -1034,25 +1035,19 @@ bool Initializer::ReconstructF(
     if(nGood4>0.7*maxGood)
         nsimilar++;
 
-    // If there is not a clear winner or not enough triangulated points reject initialization
-    /** <li> 四个结果中如果没有明显的最优结果或者没有足够数量的三角化点，则返回失败 </li> */
-    if(maxGood<nMinGood ||		//如果最好的解中没有足够的good点
-		nsimilar>1)				//或者是存在两种及以上的解的good点都占了绝大多数，说明没有明显的最优结果
+    // 四个结果中如果没有明显的最优结果或者没有足够数量的三角化点，则返回失败
+    // 结果筛选
+    // 条件1: 如果四组解能够重建的最多3D点个数仍然小于所要求的3D点个数（mMinGood），则Pass
+    // 条件2: 如果存在两组或两组以上的解能有效重建>0.7*maxGood的3D，则Pass，因为存在两个解
+    if(maxGood<nMinGood || nsimilar>1)	
     {
-		//认为这次的解算是失败的
         return false;
     }
 
-    // If best reconstruction has enough parallax initialize
-    // 比较大的视差角
-    //根据后面代码的大概意思，貌似是确定解的时候，必须要有足够的可以被三角化的空间点才行。其实是这样的：
-    //下面程序确定解的思想是找大部分空间点在相机前面的解，这个“大部分”是按照0.7*maxGood定义的（当然程序作者
-    //考虑问题更加细致，它们还考虑了两种解的大部分空间点都在相机前面的情况），但是如果这里的maxGood本来就不大，那么
-    //这个方法其实就没有什么意义了。为了衡量变量maxGood的好坏，这里对每种解都使用了视差角parallax进行描述（因为过小的
-    //视差角会带来比较大的观测误差）；然后有函数入口有一个给定的最小值minParallax，如果很幸运某种解的good点占了大多数
-    //（其实一般地也就是nGoodx==maxGood了），也要保证parallaxx>minParallax这个条件满足，才能够被认为是真正的解。
-    
-    /** <li> 检查是否有足够大的视差角,只有具有足够大的视差角,才能够得到比较好的重建. </li> */
+
+    // 选择最佳解
+    // 条件1: 有效重建最多的3D点，即maxGood == nGoodx，也即是位于相机前方的3D点个数最多
+    // 条件2: 3D点重建时的视差角 parallax 必须大于最小视差角 minParallax，理由是角度越大3D点精度越高
 
     //看看最好的good点是在哪种解的条件下发生的
     if(maxGood==nGood1)
@@ -1060,19 +1055,20 @@ bool Initializer::ReconstructF(
 		//如果该种解下的parallax大于函数参数中给定的最小值
         if(parallax1>minParallax)
         {
-			//那么就它了
-			//获取三角测量后的特征点的空间坐标
+            // 存储3D坐标
             vP3D = vP3D1;
-			//获取特征点向量的三角化测量标记
+
+			// 获取特征点向量的三角化测量标记
             vbTriangulated = vbTriangulated1;
 
-			//另存一份对应解情况下的相机位姿
+			// 存储相机姿态
             R1.copyTo(R21);
             t1.copyTo(t21);
-			//返回true表示由给定的基础矩阵求解相机R，t成功
+			
+            // 结束
             return true;
         }
-    }else if(maxGood==nGood2)					//接下来就是对其他情况的判断了，步骤都是一样的，这里就不加备注了
+    }else if(maxGood==nGood2)
     {
         if(parallax2>minParallax)
         {
@@ -1106,10 +1102,9 @@ bool Initializer::ReconstructF(
             return true;
         }
     }
-   
-    /** <li> 如果有最优解但是不满足对应的parallax>minParallax，或者是其他的原因导致的无法求出相机R，t，那么返回false表示求解失败 </li> */
+
+    // 如果有最优解但是不满足对应的parallax>minParallax，或者是其他的原因导致的无法求出相机R，t，那么返回false表示求解失败
     return false;
-    /** </ul> */
 }
 
 

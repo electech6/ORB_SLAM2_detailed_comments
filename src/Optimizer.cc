@@ -1316,7 +1316,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
         }
         else
         {
-            // 通过情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
+            // 通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
             KeyFrame* pRefKF = pMP->GetReferenceKeyFrame();
             nIDr = pRefKF->mnId;
         }

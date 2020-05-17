@@ -379,10 +379,12 @@ void MapPoint::ComputeDistinctiveDescriptors()
     // 遍历观测到3d点的所有关键帧，获得orb描述子，并插入到vDescriptors中
     for(map<KeyFrame*,size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
     {
+        // mit->first取观测到该地图点的关键帧
+        // mit->second取该地图点在关键帧中的索引
         KeyFrame* pKF = mit->first;
 
-        if(!pKF->isBad())
-            vDescriptors.push_back(pKF->mDescriptors.row(mit->second));
+        if(!pKF->isBad())                                                       
+            vDescriptors.push_back(pKF->mDescriptors.row(mit->second));     // 取对应的描述子向量
     }
 
     if(vDescriptors.empty())
@@ -390,9 +392,11 @@ void MapPoint::ComputeDistinctiveDescriptors()
 
     // Compute distances between them
     // 获得这些描述子两两之间的距离
+    // N表示为一共多少个描述子
     const size_t N = vDescriptors.size();
 	
-    //float Distances[N][N];
+    // 将Distances表述成一个对称的矩阵
+    // float Distances[N][N];
 	std::vector<std::vector<float> > Distances;
 	Distances.resize(N, vector<float>(N, 0));
 	for (size_t i = 0; i<N; i++)
@@ -413,7 +417,7 @@ void MapPoint::ComputeDistinctiveDescriptors()
     for(size_t i=0;i<N;i++)
     {
         // 第i个描述子到其它所有所有描述子之间的距离
-        //vector<int> vDists(Distances[i],Distances[i]+N);
+        // vector<int> vDists(Distances[i],Distances[i]+N);
 		vector<int> vDists(Distances[i].begin(), Distances[i].end());
 		sort(vDists.begin(), vDists.end());
 
@@ -501,22 +505,22 @@ void MapPoint::UpdateNormalAndDepth()
         KeyFrame* pKF = mit->first;
         cv::Mat Owi = pKF->GetCameraCenter();
         cv::Mat normali = mWorldPos - Owi;
-        normal = normal + normali/cv::norm(normali); // 对所有关键帧对该点的观测方向归一化为单位向量进行求和
+        normal = normal + normali/cv::norm(normali);                        // 对所有关键帧对该点的观测方向归一化为单位向量进行求和
         n++;
     } 
 
-    cv::Mat PC = Pos - pRefKF->GetCameraCenter(); // 参考关键帧相机指向3D点的向量（在世界坐标系下的表示）
-    const float dist = cv::norm(PC); // 该点到参考关键帧相机的距离
-    const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;
-    const float levelScaleFactor =  pRefKF->mvScaleFactors[level];
-    const int nLevels = pRefKF->mnScaleLevels; // 金字塔层数
+    cv::Mat PC = Pos - pRefKF->GetCameraCenter();                           // 参考关键帧相机指向3D点的向量（在世界坐标系下的表示）
+    const float dist = cv::norm(PC);                                        // 该点到参考关键帧相机的距离
+    const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;        // 观测到该地图点的当前帧的特征点在金字塔的第几层
+    const float levelScaleFactor =  pRefKF->mvScaleFactors[level];          // 当前金字塔层对应的缩放倍数
+    const int nLevels = pRefKF->mnScaleLevels;                              // 金字塔层数
 
     {
         unique_lock<mutex> lock3(mMutexPos);
         // 另见PredictScale函数前的注释
-        mfMaxDistance = dist*levelScaleFactor;                           // 观测到该点的距离下限
-        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1]; // 观测到该点的距离上限
-        mNormalVector = normal/n;                                        // 获得平均的观测方向
+        mfMaxDistance = dist*levelScaleFactor;                              // 观测到该点的距离下限
+        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];    // 观测到该点的距离上限
+        mNormalVector = normal/n;                                           // 获得平均的观测方向，ORBmatcher.cc中用到此向获得平均的观测方向，ORBmatcher.cc中用到此向量
     }
 }
 
