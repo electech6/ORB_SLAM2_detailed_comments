@@ -123,35 +123,26 @@ public:
      */
     Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth);
 
-    // Constructor for Monocular cameras.	为单目相机准备的构造函数
     /**
      * @brief 为单目相机准备的帧构造函数
      * 
-     * @param[in] imGray        对RGB图像灰度化之后得到的灰度图像
-     * @param[in] timeStamp     时间戳
-     * @param[in] extractor     特征点提取器句柄
-     * @param[in] voc           ORB特征点词典的句柄
-     * @param[in] K             相机的内参数矩阵
-     * @param[in] distCoef      相机的去畸变参数
-     * @param[in] bf            baseline*bf
-     * @param[in] thDepth       远点和近点的深度区分阈值
+     * @param[in] imGray                            //灰度图
+     * @param[in] timeStamp                         //时间戳
+     * @param[in & out] extractor                   //ORB特征点提取器的句柄
+     * @param[in] voc                               //ORB字典的句柄
+     * @param[in] K                                 //相机的内参数矩阵
+     * @param[in] distCoef                          //相机的去畸变参数
+     * @param[in] bf                                //baseline*f
+     * @param[in] thDepth                           //区分远近点的深度阈值
      */
     Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth);
 
     // Extract ORB on the image. 0 for left image and 1 for right image.
-    // 提取的关键点存放在mvKeys和mDescriptors中
-    // ORB是直接调orbExtractor提取的
-	//由于左侧图像和右侧图像进行特征点提取后的结果所保存在的变量不同，所以这里需要加左右侧标志
-	//TODO 此外左右侧图像使用的orbExtractor也不相同，这个有什么说法吗？
     /**
-     * @brief 对当前帧提取ORB特征点
+     * @brief 提取图像的ORB特征，提取的关键点存放在mvKeys，描述子存放在mDescriptors
      * 
-     * @param[in] flag  0=左图,1=右图
-     * 
-     * @param[in] im    等待提取特征点的图像
-     * @remark 之所以这里要区分左右侧图像不同的ORB提取器,是因为右侧图像的特征点提取依赖于左侧的特征点提供的坐标,
-     * 这样做可以加速特征点的提取过程. @see ???
-     * @todo 也许不是这个样子,自己有点记不清楚了. 
+     * @param[in] flag          标记是左图还是右图。0：左图  1：右图
+     * @param[in] im            等待提取特征点的图像
      */
     void ExtractORB(int flag, const cv::Mat &im);
 
@@ -221,17 +212,14 @@ public:
      */
     bool isInFrustum(MapPoint* pMP, float viewingCosLimit);
 
-    // Compute the cell of a keypoint (return false if outside the grid)
-	//根据特征点的坐标计算该点所处的图像网格
     /**
-     * @brief 根据特征点的坐标计算该点所处的图像网格
+     * @brief 计算某个特征点所在网格的网格坐标，如果找到特征点所在的网格坐标，记录在nGridPosX,nGridPosY里，返回true，没找到返回false
      * 
-     * 
-     * @param[in] kp        特征点的坐标
-     * @param[out] posX     所处的图像网格的横坐标
-     * @param[out] posY     所处的图像网格的纵坐标
-     * @return true         说明特征点在某个网格中
-     * @return false        特征点不在某个网格中
+     * @param[in] kp                    给定的特征点
+     * @param[in & out] posX            特征点所在网格坐标的横坐标
+     * @param[in & out] posY            特征点所在网格坐标的纵坐标
+     * @return true                     如果找到特征点所在的网格坐标，返回true
+     * @return false                    没找到返回false
      */
     bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 
@@ -470,21 +458,16 @@ private:
     // Undistort keypoints given OpenCV distortion parameters.
     // Only for the RGB-D case. Stereo must be already rectified!
     // (called in the constructor).
-	//根据给出的校正参数对图像的特征点进行去校正操作，由构造函数调用
-    /**
-     * @brief 根据给出的校正参数对图像的特征点进行去校正操作 \n 
-     * @details 由构造函数调用。\n
-     * 说白了就是将 Frame::mvKeys 中的特征点根据 Frame::mDistCoef中存储的去畸变参数进行去畸变操作，得到去畸变之后的特征点
-     * 坐标，并且存储在 Frame::mvKeysUn 中。
+	/**
+     * @brief 用内参对特征点去畸变，结果报存在mvKeysUn中
+     * 
      */
     void UndistortKeyPoints();
 
-    // Computes image bounds for the undistorted image (called in the constructor).
     /**
-     * @brief 计算去畸变图像的边界 \n
-     * @details 由构造函数调用
+     * @brief 计算去畸变图像的边界
      * 
-     * @param[in] imLeft 左目图像
+     * @param[in] imLeft            需要计算边界的图像
      */
     void ComputeImageBounds(const cv::Mat &imLeft);
 

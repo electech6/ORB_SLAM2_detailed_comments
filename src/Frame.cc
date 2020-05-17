@@ -104,7 +104,20 @@ Frame::Frame(const Frame &frame)
 }
 
 
-// 双目的初始化
+/**
+ * @brief 双目帧的构造函数
+ * 
+ * @param[in] imLeft 
+ * @param[in] imRight 
+ * @param[in] timeStamp 
+ * @param[in] extractorLeft 
+ * @param[in] extractorRight 
+ * @param[in] voc 
+ * @param[in] K 
+ * @param[in] distCoef 
+ * @param[in] bf 
+ * @param[in] thDepth 
+ */
 Frame::Frame(const cv::Mat &imLeft, 			//左目图像
 			 const cv::Mat &imRight, 			//右目图像
 			 const double &timeStamp, 			//时间戳
@@ -126,17 +139,10 @@ Frame::Frame(const cv::Mat &imLeft, 			//左目图像
      mThDepth(thDepth),
      mpReferenceKF(static_cast<KeyFrame*>(NULL))//NOTICE 暂时先不设置参考关键帧
 {
-    /** 主要步骤: */
-
-    // Frame ID
-	/** 1. 分配这个帧的id */
+    // Step 1 帧的ID 自增
     mnId=nNextId++;
 
-    
-    /** 2. 处理图像金字塔的相关参数 */
-
-    // Scale Level Info
-	//目测下面的内容是获取图像金字塔的每层的缩放信息，都是左目图像的
+    // Step 2 计算图像金字塔的参数 
 	//获取图像金字塔的层数
     mnScaleLevels = mpORBextractorLeft->GetLevels();
 	//这个是获得层与层之前的缩放比
@@ -152,10 +158,8 @@ Frame::Frame(const cv::Mat &imLeft, 			//左目图像
 	//获取sigma^2的倒数
     mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
 
-    /** 3. 对左目右目图像提取ORB特征.此过程中还开辟了两个线程,调用 Frame::ExtractORB() 函数来执行. */
-
     // ORB extraction
-    // 同时对左右目提特征，还同时开了两个线程
+    // Step 3 对左目右目图像提取ORB特征点, 第一个参数0-左图， 1-右图。为加速计算，同时开了两个线程计算
     thread threadLeft(&Frame::ExtractORB,		//该线程的主函数
 					  this,						//当前帧对象的对象指针
 					  0,						//表示是左图图像
@@ -169,72 +173,68 @@ Frame::Frame(const cv::Mat &imLeft, 			//左目图像
 	//mvKeys中保存的是左图像中的特征点，这里是获取左侧图像中特征点的个数
     N = mvKeys.size();
 
-    /** 4. 判断是否成功提取到特征点,如果没有就返回 */
-
 	//如果左图像中没有成功提取到特征点那么就返回，也意味这这一帧的图像无法使用
     if(mvKeys.empty())
         return;
 	
-    /** 5. 特征点去畸变,使用 Frame::UndistortKeyPoints() 函数.\n实际上由于双目输入的图像已经预先经过矫正,所以实际上并没有对特征点进行任何处理操作 */
-
-    // Undistort特征点，这里没有对双目进行校正，因为要求输入的图像已经进行极线校正
+    // Step 4 用OpenCV的矫正函数、内参对提取到的特征点进行矫正
+    // 实际上由于双目输入的图像已经预先经过矫正,所以实际上并没有对特征点进行任何处理操作
     UndistortKeyPoints();
 
-    /** 6. 计算双目间特征点的匹配\n只有匹配成功的特征点会计算其深度,深度存放在 mvDepth 中. 使用 Frame::ComputeStereoMatches()函数. */
-	//应当说，mvuRight中存储的应该是左图像中的点所匹配的在右图像中的点的横坐标（纵坐标相同）；
-	//mvDepth才是估计的深度
+    // Step 5 计算双目间特征点的匹配，只有匹配成功的特征点会计算其深度,深度存放在 mvDepth 
+	// mvuRight中存储的应该是左图像中的点所匹配的在右图像中的点的横坐标（纵坐标相同）
     ComputeStereoMatches();
 
-    /** 7. 地图点集初始化 \n生成等数量的地图点句柄,由一个成员变量vector mvpMapPoints处理 \n然后默认所有的特征点均为inlier */
-
-    // 对应的mappoints
-	//这里其实是生成了一个空的地图点句柄vector，这部分Frame.cpp中没有进行相关操作
-    //N个点,每个点的句柄的初始值为<MapPoint*>(NULL)
+    // 初始化本帧的地图点
     mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));   
-	//对于每个地图点，让其为外点的标记清空，先认为都是inlier
+	// 记录地图点是否为外点，初始化均为外点false
     mvbOutlier = vector<bool>(N,false);
 
-    /** 8. 如果当前帧是第一帧,或者刚刚进行了重定位等矫正,那么需要进行特殊的初始化 \n其实就是对一些类的静态成员变量进行赋值\n内容主要包括下面几种: \n
-     *      - 计算未矫正图像的边界.  Frame::ComputeImageBounds() \n
-     *      - 计算一个像素列相当于几个（<1）图像网格列 \n
-     *      - 对相机内参进行赋值
-     *      - 完成上述操作之后对标志进行复位
-     */
-
-
     // This is done only for the first Frame (or after a change in the calibration)
-	//检查是否需要对当前的这一帧进行特殊的初始化，这里“特殊的初始化”的意思就是对一些类的静态成员变量进行赋值
+	//  Step 5 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
     if(mbInitialComputations)
     {
-		//计算未校正图像的边界
+		//计算去畸变后图像的边界
         ComputeImageBounds(imLeft);
 
-		//计算一个像素列相当于几个（<1）图像网格列
-        mfGridElementWidthInv=static_cast<float>(FRAME_GRID_COLS)/(mnMaxX-mnMinX);
-        mfGridElementHeightInv=static_cast<float>(FRAME_GRID_ROWS)/(mnMaxY-mnMinY);
+		// 表示一个图像像素相当于多少个图像网格列（宽）
+        mfGridElementWidthInv=static_cast<float>(FRAME_GRID_COLS)/static_cast<float>(mnMaxX-mnMinX);
+		// 表示一个图像像素相当于多少个图像网格行（高）
+        mfGridElementHeightInv=static_cast<float>(FRAME_GRID_ROWS)/static_cast<float>(mnMaxY-mnMinY);
 
-		//对这些类的静态成员变量进行赋值，其实前面的那个也是，都是相机的基本内参
+		//给类的静态成员变量复制
         fx = K.at<float>(0,0);
         fy = K.at<float>(1,1);
         cx = K.at<float>(0,2);
         cy = K.at<float>(1,2);
+		// 猜测是因为这种除法计算需要的时间略长，所以这里直接存储了这个中间计算结果
         invfx = 1.0f/fx;
         invfy = 1.0f/fy;
 
-		//这里将这个标记恢复false，就说明这个标记的确是标记进行“特殊初始化”用的
+		//特殊的初始化过程完成，标志复位
         mbInitialComputations=false;
-    }//查看“特殊初始化”标记，如果有的话就要进行特殊初始化
+    }
 
-    /** 9. 计算相机基线长度 */
-
-    //双目相机的基线长度是在这里被计算的, TODO  为什么要在这里进行计算啊？这个不是一个常量吗对于一个特定的双目相机？
+    // 双目相机基线长度
     mb = mbf/fx;
 
-    /** 10. 将提取出来的特征点分配到图像网格中 \n Frame::AssignFeaturesToGrid() */
+    // 将特征点分配到图像网格中 
     AssignFeaturesToGrid();    
 }
 
-// RGBD初始化
+/**
+ * @brief RGBD 帧的构造函数
+ * 
+ * @param[in] imGray 
+ * @param[in] imDepth 
+ * @param[in] timeStamp 
+ * @param[in] extractor 
+ * @param[in] voc 
+ * @param[in] K 
+ * @param[in] distCoef 
+ * @param[in] bf 
+ * @param[in] thDepth 
+ */
 Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
 			 const cv::Mat &imDepth, 	//深度图像
 			 const double &timeStamp, 	//时间戳
@@ -253,14 +253,10 @@ Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
      mbf(bf), 
      mThDepth(thDepth)
 {
-    /** 主要步骤: */
-    // Frame ID
-	/** 1. 分配当前帧ID */
+    // Step 1 帧的ID 自增
     mnId=nNextId++;
 
-    /** 2. 计算图像金字塔的相关参数 */
-    // Scale Level Info
-	//图像层的尺度缩放信息，和双目相机的帧的初始化相同
+    // Step 2 计算图像金字塔的参数 
 	//获取图像金字塔的层数
     mnScaleLevels = mpORBextractorLeft->GetLevels();
 	//获取每层的缩放因子
@@ -279,76 +275,62 @@ Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
     /** 3. 提取彩色图像(其实现在已经灰度化成为灰度图像了)的特征点 \n Frame::ExtractORB() */
 
     // ORB extraction
-	//对左侧图像提取ORB特征点
+	// Step 3 对图像进行提取特征点, 第一个参数0-左图， 1-右图
     ExtractORB(0,imGray);
 
 	//获取特征点的个数
     N = mvKeys.size();
 
-    /** 4. 判断是否正确提取出特征点,如果没有则放弃 */
-
 	//如果这一帧没有能够提取出特征点，那么就直接返回了
     if(mvKeys.empty())
         return;
 
-    /** 5. 对提取到的特征点进行去畸变操作,根据特征点的深度反推假想中的右侧特征点 \n
-     *  去畸变: Frame::UndistortKeyPoints()
-     *  恢复假想右图特征点: Frame::ComputeStereoFromRGBD()
-    */
-	//运行到这里说明以及获得到了特征点，这里对这些特征点进行去畸变操作
+	// Step 4 用OpenCV的矫正函数、内参对提取到的特征点进行矫正
     UndistortKeyPoints();
 
-	//获取灰度化后的彩色图像的深度，并且根据这个深度计算其假象的右图中匹配的特征点的视差
+	// Step 5 获取图像的深度，并且根据这个深度推算其右图中匹配的特征点的视差
     ComputeStereoFromRGBD(imDepth);
 
-    /** 6. 初始化本帧地图点 */
-
-	//初始化存储地图点句柄的vector
+    // 初始化本帧的地图点
     mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
-	//然后默认所有的地图点都是inlier
+	// 记录地图点是否为外点，初始化均为外点false
     mvbOutlier = vector<bool>(N,false);
 
-    /** 7. 判断是否需要进行进行特殊初始化,这个过程一般是在第一帧或者是重定位之后进行.主要操作有:\n
-     *      - 计算未校正图像的边界 Frame::ComputeImageBounds()
-     *      - 计算一个像素列相当于几个（<1）图像网格列
-     *      - 给相机的内参数赋值
-     *      - 标志复位
-     */ 
     // This is done only for the first Frame (or after a change in the calibration)
-	//判断是否是需要首次进行的“特殊初始化”
+	//  Step 5 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
     if(mbInitialComputations)
     {
-		//计算未校正图像的边界
+		//计算去畸变后图像的边界
         ComputeImageBounds(imGray);
 
-		//计算一个像素列相当于几个（<1）图像网格列
+        // 表示一个图像像素相当于多少个图像网格列（宽）
         mfGridElementWidthInv=static_cast<float>(FRAME_GRID_COLS)/static_cast<float>(mnMaxX-mnMinX);
+		// 表示一个图像像素相当于多少个图像网格行（高）
         mfGridElementHeightInv=static_cast<float>(FRAME_GRID_ROWS)/static_cast<float>(mnMaxY-mnMinY);
 
-		//对类的静态成员变量进行赋值
+		//给类的静态成员变量复制
         fx = K.at<float>(0,0);
         fy = K.at<float>(1,1);
         cx = K.at<float>(0,2);
         cy = K.at<float>(1,2);
+		// 猜测是因为这种除法计算需要的时间略长，所以这里直接存储了这个中间计算结果
         invfx = 1.0f/fx;
         invfy = 1.0f/fy;
 
-		//现在这个“特殊”的初始化过程进行完成了，将这个标志复位
+		//特殊的初始化过程完成，标志复位
         mbInitialComputations=false;
     }
 
-    //由于后面要对从RGBD相机输入的特征点,结合相机基线长度,焦距,以及点的深度等信息来计算其在假想的"右侧图像"上的匹配点,所以
-    //需要计算这个东西
-    //TODO 但是好奇的是,mbf是怎么得到的?
-    /** 8. 计算假想的基线长度 baseline= mbf/fx */
+    // 计算假想的基线长度 baseline= mbf/fx
+    // 后面要对从RGBD相机输入的特征点,结合相机基线长度,焦距,以及点的深度等信息来计算其在假想的"右侧图像"上的匹配点
     mb = mbf/fx;
 
-	/** 9.将特征点分配到图像网格中 \n Frame::AssignFeaturesToGrid() */
+	// 将特征点分配到图像网格中 
     AssignFeaturesToGrid();
 }
 
 /**
- * @brief 单目构建帧对象
+ * @brief 单目帧构造函数
  * 
  * @param[in] imGray                            //灰度图
  * @param[in] timeStamp                         //时间戳
@@ -361,7 +343,7 @@ Frame::Frame(const cv::Mat &imGray, 	//灰度化之后的彩色图像
  */
 Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
+     mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
     // Frame ID
 	// Step 1 帧的ID 自增
@@ -395,7 +377,7 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     if(mvKeys.empty())
         return;
 
-    // Step 4 用OpenCV的矫正函数对提取到的特征点进行矫正 
+    // Step 4 用OpenCV的矫正函数、内参对提取到的特征点进行矫正 
     UndistortKeyPoints();
 
     // Set no stereo information
@@ -410,10 +392,10 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     mvbOutlier = vector<bool>(N,false);
 
     // This is done only for the first Frame (or after a change in the calibration)
-	//  Step 5 进行特殊初始化,这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
+	//  Step 5 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
     if(mbInitialComputations)
     {
-		// 计算未校正图像的边界
+		// 计算去畸变后图像的边界
         ComputeImageBounds(imGray);
 
 		// 表示一个图像像素相当于多少个图像网格列（宽）
@@ -437,65 +419,59 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     //计算 basline
     mb = mbf/fx;
 
-	//  Step 6 将特征点分配到图像网格中 
+	// 将特征点分配到图像网格中 
     AssignFeaturesToGrid();
 }
 
-//将提取的ORB特征点分配到图像网格中
+/**
+ * @brief 将提取的ORB特征点分配到图像网格中
+ * 
+ */
 void Frame::AssignFeaturesToGrid()
 {
-    /** 步骤: */
-    /** 1. 提前给 Frame::mGrid 中存储特征点的vector预分配空间 */
-	//这里是提前给那些网格中的vector预分配的空间
-	//TODO 可是为什么是平均值的一半呢？仅凭Frame.cpp部分还不足以知道原因
-    //猜想也有可能是作者预想的,这样的空间分配上最小,以后运行的时候因为空间不够进行额外分配的时候时间占用也最少
+    // Step 1  给存储特征点的网格数组 Frame::mGrid 预分配空间
+	// ? 这里0.5 是为什么？节省空间？
+    // FRAME_GRID_COLS = 64，FRAME_GRID_ROWS=48
     int nReserve = 0.5f*N/(FRAME_GRID_COLS*FRAME_GRID_ROWS);
 	//开始对mGrid这个二维数组中的每一个vector元素遍历并预分配空间
     for(unsigned int i=0; i<FRAME_GRID_COLS;i++)
         for (unsigned int j=0; j<FRAME_GRID_ROWS;j++)
             mGrid[i][j].reserve(nReserve);
 
-    // 在mGrid中记录了各特征点，严格来说应该是各特征点在vector mvKeysUn中的索引
-	//对于每个特征点
-    /** 2. 开始遍历每个特征点 */
+    // Step 2 遍历每个特征点，将每个特征点在mvKeysUn中的索引值放到对应的网格mGrid中
     for(int i=0;i<N;i++)
     {
 		//从类的成员变量中获取已经去畸变后的特征点
         const cv::KeyPoint &kp = mvKeysUn[i];
 
-		//用于存储某个特征点所在网格的网格坐标
+		//存储某个特征点所在网格的网格坐标，nGridPosX范围：[0,FRAME_GRID_COLS], nGridPosY范围：[0,FRAME_GRID_ROWS]
         int nGridPosX, nGridPosY;
-		//计算某个特征点所在网格的网格坐标，如果失败的话返回false
-        /** 3. 对遍历到的特征点使用 Frame::PosInGrid() 函数确定其所在的网格 */
+		// 计算某个特征点所在网格的网格坐标，如果找到特征点所在的网格坐标，记录在nGridPosX,nGridPosY里，返回true，没找到返回false
         if(PosInGrid(kp,nGridPosX,nGridPosY))
-			//将这个特征点的索引追加到对应网格的vector中
-            /** 4. 如果的确在某个网格中,就将当前遍历到的特征点追加到对应的网格中的vector中 */
+			//如果找到特征点所在网格坐标，将这个特征点的索引添加到对应网格的数组mGrid中
             mGrid[nGridPosX][nGridPosY].push_back(i);
-    }/** 5. 特征点遍历结束 */
+    }
 }
 
-//提取图像的ORB特征
-void Frame::ExtractORB(int flag, 			//0-左图  1-右图
-					   const cv::Mat &im)	//等待提取特征点的图像
+/**
+ * @brief 提取图像的ORB特征点，提取的关键点存放在mvKeys，描述子存放在mDescriptors
+ * 
+ * @param[in] flag          标记是左图还是右图。0：左图  1：右图
+ * @param[in] im            等待提取特征点的图像
+ */
+void Frame::ExtractORB(int flag, const cv::Mat &im)
 {
-    /** 步骤:<ul>*/
-    /** <li> 判断是左图还是右图 </li> */
+    // 判断是左图还是右图
     if(flag==0)
-        /** <li> 左图的话就套使用左图指定的特征点提取器，并将提取结果保存到对应的变量中 \n
-		 * 其实这里的提取器句柄就是一个函数指针...或者说,是运算符更加合适 \n
-         * ORBextractor::operator()  </li> */
+        // 左图的话就套使用左图指定的特征点提取器，并将提取结果保存到对应的变量中 
+        // 这里使用了仿函数来完成，重载了括号运算符 ORBextractor::operator() 
         (*mpORBextractorLeft)(im,				//待提取特征点的图像
-							  cv::Mat(),		//TODO ？？？？ 这个参数的含义要参考这部分的源文件才能知道
-                                                //问题是参考了源文件也不清楚,说是掩摸图像,但实际在对应的程序中根本就没有用到
+							  cv::Mat(),		//掩摸图像, 实际没有用到
 							  mvKeys,			//输出变量，用于保存提取后的特征点
 							  mDescriptors);	//输出变量，用于保存特征点的描述子
     else
-        /** <li> 右图的话就需要使用右图指定的特征点提取器，并将提取结果保存到对应的变量中  </li> \n ORBextractor::operator()  */
+        // 右图的话就需要使用右图指定的特征点提取器，并将提取结果保存到对应的变量中 
         (*mpORBextractorRight)(im,cv::Mat(),mvKeysRight,mDescriptorsRight);
-	/** </ul> */
-	//所以，上面区分左右图的原因就是因为保存结果的变量不同。不过新的疑问是：
-	// TODO 左图的特征点提取器和右图的特征点提取器有什么不同之处吗？
-    //这个好像的确是有的, 右图的特征点提取貌似是要在左图的基础上进行,来加速特征点的提取过程
 }
 
 // 设置相机姿态，随后会调用 UpdatePoseMatrices() 来改变mRcw,mRwc等变量的值
@@ -834,29 +810,30 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
 }
 
 
-//计算指定特征点属于哪个图像网格
-bool Frame::PosInGrid(			//返回值：true-说明找到了指定特征点所在的图像网格  false-说明没有找到
-	const cv::KeyPoint &kp,		//输入，指定的特征点
-	int &posX,int &posY)		//输出，指定的图像特征点所在的图像网格的横纵id（其实就是图像网格的坐标）
+/**
+ * @brief 计算某个特征点所在网格的网格坐标，如果找到特征点所在的网格坐标，记录在nGridPosX,nGridPosY里，返回true，没找到返回false
+ * 
+ * @param[in] kp                    给定的特征点
+ * @param[in & out] posX            特征点所在网格坐标的横坐标
+ * @param[in & out] posY            特征点所在网格坐标的纵坐标
+ * @return true                     如果找到特征点所在的网格坐标，返回true
+ * @return false                    没找到返回false
+ */
+bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY)
 {
-    /** 这段函数的想法很简单，就是利用划分网格时的图像边界坐标 Frame::mnMinX Frame::mnMinY 和特征点本身的坐标来计算到图像边界需要多少个图像网格列，
-     * 从而得到这个特征点的归属。\n
-     * 当然具体计算的时候需要检查这个特征点是否能够正确地落到划分的图像网格中。 \n
-     * @todo 但是我不明白的是，这里不应该使用四舍五入啊。。。这里应该使用完全去除小数部分的取整方法啊，可能与图像网格的设计有关 
-    */
-
-	//std::round(x)返回x的四舍五入值
-	//根据前面的分析，mfGridElementWidthInv就是表示一个像素列相当于多少个（<1）图像网格列
+	// 计算特征点x,y坐标落在哪个网格内，网格坐标为posX，posY
+    // mfGridElementWidthInv=(FRAME_GRID_COLS)/(mnMaxX-mnMinX);
+    // mfGridElementHeightInv=(FRAME_GRID_ROWS)/(mnMaxY-mnMinY);
     posX = round((kp.pt.x-mnMinX)*mfGridElementWidthInv);
     posY = round((kp.pt.y-mnMinY)*mfGridElementHeightInv);
 
     //Keypoint's coordinates are undistorted, which could cause to go out of the image
+    // 因为特征点进行了去畸变，而且前面计算是round取整，所以有可能得到的点落在图像网格坐标外面
+    // 如果网格坐标posX，posY超出了[0,FRAME_GRID_COLS] 和[0,FRAME_GRID_ROWS]，表示该特征点没有对应网格坐标，返回false
     if(posX<0 || posX>=FRAME_GRID_COLS || posY<0 || posY>=FRAME_GRID_ROWS)
-		//如果最后计算出来的所归属的图像网格的坐标不合法，那么说明这个特征点的坐标很有可能是没有经过校正，
-		//因此落在了图像的外面，返回false表示确定失败
         return false;
 
-	//返回true表示计算成功
+	// 计算成功返回true
     return true;
 }
 
@@ -879,7 +856,7 @@ void Frame::ComputeBoW()
 }
 
 /**
- * @brief 对特征点去畸变
+ * @brief 用内参对特征点去畸变，结果报存在mvKeysUn中
  * 
  */
 void Frame::UndistortKeyPoints()
