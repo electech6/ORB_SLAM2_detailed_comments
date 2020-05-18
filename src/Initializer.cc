@@ -1121,98 +1121,113 @@ bool Initializer::ReconstructH(
     cv::Mat &t21,                   //计算出来的相机平移
     vector<cv::Point3f> &vP3D,      //世界坐标系下，三角化测量特征点对之后得到的特征点的空间坐标
     vector<bool> &vbTriangulated,   //特征点对被三角化测量的标记
-	float minParallax,              //在进行三角化测量时，观测正常所允许的最小视差角
+    float minParallax,              //在进行三角化测量时，观测正常所允许的最小视差角
     int minTriangulated)            //最少被三角化的点对数（其实也是点个数）
 {
-    /** 这个函数从单应矩阵中恢复相机的的运动. 各种计算公式都是从上面的参考文献中导出的,原理复杂,不再详细介绍原因. 
-     * 计算过程如下:  <ul>
-    */
 
-    /** <li> 统计匹配的特征点对中属于Inlier的个数 </li> */
+    // 目的 ：通过单应矩阵H恢复两帧图像之间的旋转矩阵R和平移向量T
+    // 参考 ：Motion and structure from motion in a piecewise plannar environment.
+    //        International Journal of Pattern Recognition and Artificial Intelligence, 1988
+
+    // 流程:
+    //      1. 根据H矩阵的奇异值d'= d2 或者 d' = -d2 分别计算 H 矩阵分解的 8 组解
+    //        1.1 讨论 d' > 0 时的 4 组解
+    //        1.2 讨论 d' < 0 时的 4 组解
+    //      2. 对 8 组解进行验证，并选择产生相机前方最多3D点的解为最优解
+
+    // 统计匹配的特征点对中属于内点(Inlier)或有效点个数
     int N=0;
-	//遍历
     for(size_t i=0, iend = vbMatchesInliers.size() ; i<iend; i++)
-		//如果被遍历到的这个点属于Inlier
         if(vbMatchesInliers[i])
-			//计数变量++
             N++;
 
     // We recover 8 motion hypotheses using the method of Faugeras et al.
     // Motion and structure from motion in a piecewise planar environment.
     // International Journal of Pattern Recognition and Artificial Intelligence, 1988
 
-    /** <li> 由于前面我们是在图像上,也就是在相机的归一化成像平面*相机内参矩阵上得到的单应矩阵,首先需要将他们转换到在空间意义下的单应矩阵.  </li> */
-    cv::Mat invK = K.inv();
-	//这个部分不要看PPT，对不太上，可以结合着视觉SLAM十四讲P146页中单应矩阵的推导来看 
-	//其实最后还是缺少了一个因子,但是这个因子最终是反映在单目尺度的不确定性(具体地是表现在后面的平移)上,所以这里完全可以不管它
+    // 参考SLAM十四讲第二版p170-p171
+    // H = K * (R - t * n / d) * K_inv
+    // 其中: K表示内参数矩阵
+    //       K_inv 表示内参数矩阵的逆
+    //       R 和 t 表示旋转和平移向量
+    //       n 表示平面法向量
+    // 令 H = K * A * K_inv
+    // 则 A = k_inv * H * k
 
+    cv::Mat invK = K.inv();
     cv::Mat A = invK*H21*K;
 
-    /** <li> 对单应矩阵(注意不是函数传递过来的单应矩阵)进行奇异值分解 </li> */
-	//存储进行奇异值分解的结果
+    // 对矩阵A进行SVD分解
+    // A 等待被进行奇异值分解的矩阵
+    // w 奇异值矩阵
+    // U 奇异值分解左矩阵
+    // Vt 奇异值分解右矩阵，注意函数返回的是转置
+    // cv::SVD::FULL_UV 全部分解
+    // A = UAVt
     cv::Mat U,w,Vt,V;
-	//进行奇异值分解
-    cv::SVD::compute(A,						//等待被进行奇异值分解的矩阵
-					 w,						//奇异值矩阵
-					 U,						//奇异值分解左矩阵
-					 Vt,					//奇异值分解右矩阵，注意函数返回的是转置
-					 cv::SVD::FULL_UV);		//全部分解
-	//得到奇异值分解的右矩阵本身
+    cv::SVD::compute(A, w, U, Vt, cv::SVD::FULL_UV);
+
+    // 根据文献eq(8)，计算关联变量
     V=Vt.t();
 
-	//计算矩阵U的行列式的值和矩阵V^t的行列式的值的乘积
-	//|V|==|Vt|
+    // 计算变量s = det(U) * det(V)
+    // 因为det(V)==det(Vt), 所以 s = det(U) * det(Vt)
     float s = cv::determinant(U)*cv::determinant(Vt);
-	
-	//取得矩阵的各个奇异值
+    
+    // 取得矩阵的各个奇异值
     float d1 = w.at<float>(0);
     float d2 = w.at<float>(1);
     float d3 = w.at<float>(2);
 
-    /** <li> 查看是否满足奇异值分解的的降序排列,如果不符合那么就放弃解算  </li> */
-    // SVD分解的正常情况是特征值降序排列
-	// NOTICE 妙啊！！！用这种方式来比较浮点数的大小
-    if(d1/d2<1.00001 || d2/d3<1.00001)
-    {
-		//如果不满足奇异值的降序排列则说明计算错误，解算失败，返回false
+    // SVD分解正常情况下特征值di应该是正的，且满足d1>=d2>=d3
+    if(d1/d2<1.00001 || d2/d3<1.00001) {
         return false;
     }
 
 
-    /** <li> 在ORBSLAM中没有对奇异值 d1 d2 d3的关系进行分类讨论,直接进行了计算  </li> */
-    //由于d1 d2 d3的关系再怎么特殊，计算过程也还是都一样的，因此这里没有进行判断而是直接进行处理了
-    //存储每一种子情况下解出来的旋转矩阵、平移向量和空间向量
+    // 在ORBSLAM中没有对奇异值 d1 d2 d3按照论文中描述的关系进行分类讨论, 而是直接进行了计算
+    // 定义8中情况下的旋转矩阵、平移向量和空间向量
     vector<cv::Mat> vR, vt, vn;
-	//预分配空间
     vR.reserve(8);
     vt.reserve(8);
     vn.reserve(8);
 
+    // Step 1.1 讨论 d' > 0 时的 4 组解
+    // 根据论文eq.(12)有
+    // x1 = e1 * sqrt((d1 * d1 - d2 * d2) / (d1 * d1 - d3 * d3))
+    // x2 = 0
+    // x3 = e3 * sqrt((d2 * d2 - d2 * d2) / (d1 * d1 - d3 * d3))
+    // 令 aux1 = sqrt((d1*d1-d2*d2)/(d1*d1-d3*d3))
+    //    aux3 = sqrt((d2*d2-d3*d3)/(d1*d1-d3*d3))
+    // 则
+    // x1 = e1 * aux1
+    // x3 = e3 * aux2
 
-    /** <li> 为了方便计算, 先计算了所有量的不带符号的值  </li> */
-    //n'=[x1 0 x3] 4 posibilities e1=e3=1, e1=1 e3=-1, e1=-1 e3=1, e1=e3=-1
-    // 法向量n'= [x1 0 x3] 对应ppt的公式17
-	//上面注释中的e1 e3其实就是PPT中公式17的表示+-1的符号变量
-	//x1的未加符号版
+    // 因为 e1,e2,e3 = 1 or -1
+    // 所以有x1和x3有四种组合
+    // x1 =  {aux1,aux1,-aux1,-aux1}
+    // x3 =  {aux3,-aux3,aux3,-aux3}
+
     float aux1 = sqrt((d1*d1-d2*d2)/(d1*d1-d3*d3));
     float aux3 = sqrt((d2*d2-d3*d3)/(d1*d1-d3*d3));
-	//下面两个数组则是存储了e1 e3相互搭配可能会出现的四种解的情况
     float x1[] = {aux1,aux1,-aux1,-aux1};
     float x3[] = {aux3,-aux3,aux3,-aux3};
 
-    /** <li> 根据d'=±d2的情况进行分类讨论.分别计算各种情况下的 n' R' t' </li> */
 
-    //case d'=+d2
-    // 计算ppt中公式19
-	//当确定了d'=d2时，PPT中公式19中sin_theta项的无符号版本
+    // 根据论文eq.(13)有
+    // sin(theta) = e1 * e3 * sqrt(( d1 * d1 - d2 * d2) * (d2 * d2 - d3 * d3)) /(d1 + d3)/d2
+    // cos(theta) = (d2* d2 + d1 * d3) / (d1 + d3) / d2 
+    // 令  aux_stheta = sqrt((d1*d1-d2*d2)*(d2*d2-d3*d3))/((d1+d3)*d2)
+    // 则  sin(theta) = e1 * e3 * aux_stheta
+    //     cos(theta) = (d2*d2+d1*d3)/((d1+d3)*d2)
+    // 因为 e1 e2 e3 = 1 or -1
+    // 所以 sin(theta) = {aux_stheta, -aux_stheta, -aux_stheta, aux_stheta}
     float aux_stheta = sqrt((d1*d1-d2*d2)*(d2*d2-d3*d3))/((d1+d3)*d2);
-	//cos_theta项
     float ctheta = (d2*d2+d1*d3)/((d1+d3)*d2);
-	//根据e1 e3的各种不同的排列组合，可能的sin_thet项的两种解，这里因为后面计算方便就写成了这种形式
     float stheta[] = {aux_stheta, -aux_stheta, -aux_stheta, aux_stheta};
 
-    // 计算旋转矩阵 R‘，计算ppt中公式18
-	//根据不同的e1 e3组合所得出来的四种R t的解
+    // 计算旋转矩阵 R'
+    //根据不同的e1 e3组合所得出来的四种R t的解
     //      | ctheta      0   -aux_stheta|       | aux1|
     // Rp = |    0        1       0      |  tp = |  0  |
     //      | aux_stheta  0    ctheta    |       |-aux3|
@@ -1228,63 +1243,61 @@ bool Initializer::ReconstructH(
     //      | ctheta      0   -aux_stheta|       |-aux1|
     // Rp = |    0        1       0      |  tp = |  0  |
     //      | aux_stheta  0    ctheta    |       | aux3|
-	// 开始遍历这四种情况中的每一种
+    // 开始遍历这四种情况中的每一种
     for(int i=0; i<4; i++)
     {
-		//生成Rp，就是PPT中公式的 R‘
+        //生成Rp，就是eq.(8) 的 R'
         cv::Mat Rp=cv::Mat::eye(3,3,CV_32F);
         Rp.at<float>(0,0)=ctheta;
-        Rp.at<float>(0,2)=-stheta[i];		//在这里你就明白为什么前面非得用数组表示了
-        Rp.at<float>(2,0)=stheta[i];		
+        Rp.at<float>(0,2)=-stheta[i];
+        Rp.at<float>(2,0)=stheta[i];        
         Rp.at<float>(2,2)=ctheta;
 
-		//NOTICE 这里的变量定义和PPT中的不同，看原始论文：
-		//Motion and structure from motion in a piecewise planner environment
+        // eq.(8) 计算R
         cv::Mat R = s*U*Rp*Vt;
-		//将这个“真实”的R添加到相关的向量中
+
+        // 保存
         vR.push_back(R);
 
-		//生成tp
+        // eq. (14) 生成tp 
         cv::Mat tp(3,1,CV_32F);
         tp.at<float>(0)=x1[i];
         tp.at<float>(1)=0;
-        tp.at<float>(2)=-x3[i];         //注意这里写的是正确的,PPT上的写法不太合适;但是由于x3符号是随机搭配的,所以最后得到的是相同的结果
+        tp.at<float>(2)=-x3[i];
         tp*=d1-d3;
 
         // 这里虽然对t有归一化，并没有决定单目整个SLAM过程的尺度
         // 因为CreateInitialMapMonocular函数对3D点深度会缩放，然后反过来对 t 有改变
-		//恢复原始的t
+        // eq.(8)恢复原始的t
         cv::Mat t = U*tp;
-		//首先进行向量自归一化，然后添加到vector中
         vt.push_back(t/cv::norm(t));
 
-		//构造法向量np
+        // 构造法向量np
         cv::Mat np(3,1,CV_32F);
         np.at<float>(0)=x1[i];
         np.at<float>(1)=0;
         np.at<float>(2)=x3[i];
 
-		//恢复原始的法向量
+        // eq.(8) 恢复原始的法向量
         cv::Mat n = V*np;
-		//看PPT 16页的图，保持平面法向量向上
+        //看PPT 16页的图，保持平面法向量向上
         if(n.at<float>(2)<0)
             n=-n;
-		//添加到vector
+        // 添加到vector
         vn.push_back(n);
-    }//对于由e1 e3导致的每种可能的解
+    }
     
-    //case d'=-d2
-    // 计算ppt中 公式22，sin_theta的无符号版
+    // Step 1.2 讨论 d' < 0 时的 4 组解
     float aux_sphi = sqrt((d1*d1-d2*d2)*(d2*d2-d3*d3))/((d1-d3)*d2);
-	//cos_theta项
+    // cos_theta项
     float cphi = (d1*d3-d2*d2)/((d1-d3)*d2);
-	//考虑到e1,e2的取值，这里的sin_theta有两种可能的解，但是为了下面的计算方便需要，这里写成了这种形式
+    // 考虑到e1,e2的取值，这里的sin_theta有两种可能的解
     float sphi[] = {aux_sphi, -aux_sphi, -aux_sphi, aux_sphi};
 
-    //对于每种由e1 e3取值的组合而形成的四种解的情况
+    // 对于每种由e1 e3取值的组合而形成的四种解的情况
     for(int i=0; i<4; i++)
     {
-		// 计算旋转矩阵 R‘，计算ppt中公式21
+        // 计算旋转矩阵 R'
         cv::Mat Rp=cv::Mat::eye(3,3,CV_32F);
         Rp.at<float>(0,0)=cphi;
         Rp.at<float>(0,2)=sphi[i];
@@ -1292,125 +1305,124 @@ bool Initializer::ReconstructH(
         Rp.at<float>(2,0)=sphi[i];
         Rp.at<float>(2,2)=-cphi;
 
-		//恢复出原来的R
+        // 恢复出原来的R
         cv::Mat R = s*U*Rp*Vt;
-		//然后添加到vector中
+        // 然后添加到vector中
         vR.push_back(R);
 
-		//构造tp
+        // 构造tp
         cv::Mat tp(3,1,CV_32F);
         tp.at<float>(0)=x1[i];
         tp.at<float>(1)=0;
         tp.at<float>(2)=x3[i];
         tp*=d1+d3;
 
-		//恢复出原来的t
+        // 恢复出原来的t
         cv::Mat t = U*tp;
-		//归一化之后加入到vector中,要提供给上面的平移矩阵都是要进行过归一化的
+        // 归一化之后加入到vector中,要提供给上面的平移矩阵都是要进行过归一化的
         vt.push_back(t/cv::norm(t));
 
-		//构造法向量np
+        // 构造法向量np
         cv::Mat np(3,1,CV_32F);
         np.at<float>(0)=x1[i];
         np.at<float>(1)=0;
         np.at<float>(2)=x3[i];
 
-		//恢复出原来的法向量
+        // 恢复出原来的法向量
         cv::Mat n = V*np;
-		//保证法向量指向上方
+        // 保证法向量指向上方
         if(n.at<float>(2)<0)
             n=-n;
-		//添加到vector中
+        // 添加到vector中
         vn.push_back(n);
     }
 
-	//最好的good点
+    // 最好的good点
     int bestGood = 0;
-	//其次最好的good点
+    // 其次最好的good点
     int secondBestGood = 0;    
-	//最好的解的索引，初始值为-1
+    // 最好的解的索引，初始值为-1
     int bestSolutionIdx = -1;
-	//最大的视差角
+    // 最大的视差角
     float bestParallax = -1;
-	//存储最好解对应的，对特征点对进行三角化测量的结果
+    // 存储最好解对应的，对特征点对进行三角化测量的结果
     vector<cv::Point3f> bestP3D;
-	//最佳解所对应的，那些可以被三角化测量的点的标记
+    // 最佳解所对应的，那些可以被三角化测量的点的标记
     vector<bool> bestTriangulated;
 
     // Instead of applying the visibility constraints proposed in the WFaugeras' paper (which could fail for points seen with low parallax)
     // We reconstruct all hypotheses and check in terms of triangulated points and parallax
-	
-    /** <li> 对于 d'=d2 和 d'=-d2 分别对应8组(R t) 分别验证每一种解的情况</li> <ul> */
+    
+    // Step 2. 对 8 组解进行验证，并选择产生相机前方最多3D点的解为最优解
     for(size_t i=0; i<8; i++)
     {
-		//第i组解对应的比较大的视差角
+        // 第i组解对应的比较大的视差角
         float parallaxi;
-		//三角化测量之后的特征点的空间坐标
+        // 三角化测量之后的特征点的空间坐标
         vector<cv::Point3f> vP3Di;
-		//特征点对是否被三角化的标记
+        // 特征点对是否被三角化的标记
         vector<bool> vbTriangulatedi;
-	
-        /** <li> 调用 Initializer::CheckRT(), 计算good点的数目 </li> */
-        int nGood = CheckRT(vR[i],vt[i],					//当前组解的旋转矩阵和平移向量
-							mvKeys1,mvKeys2,				//特征点
-							mvMatches12,vbMatchesInliers,	//特征匹配关系以及Inlier标记
-							K,								//相机的内参数矩阵
-							vP3Di, 							//存储三角化测量之后的特征点空间坐标的
-							4.0*mSigma2,					//三角化过程中允许的最大重投影误差
-							vbTriangulatedi,				//特征点是否被成功进行三角测量的标记
-							parallaxi);						// 这组解在三角化测量的时候的比较大的视差角
+    
+        // 调用 Initializer::CheckRT(), 计算good点的数目
+        int nGood = CheckRT(vR[i],vt[i],                    //当前组解的旋转矩阵和平移向量
+                            mvKeys1,mvKeys2,                //特征点
+                            mvMatches12,vbMatchesInliers,   //特征匹配关系以及Inlier标记
+                            K,                              //相机的内参数矩阵
+                            vP3Di,                          //存储三角化测量之后的特征点空间坐标的
+                            4.0*mSigma2,                    //三角化过程中允许的最大重投影误差
+                            vbTriangulatedi,                //特征点是否被成功进行三角测量的标记
+                            parallaxi);                     // 这组解在三角化测量的时候的比较大的视差角
         
-        /** <li> 更新历史最优和次优的解 </li> */
+        // 更新历史最优和次优的解
         // 保留最优的和次优的解.保存次优解的目的是看看最优解是否突出
-		//如果当前组解的good点数是历史最优
+        // 如果当前组解的good点数是历史最优
         if(nGood>bestGood)
         {
-			//那么之前的历史最优就变成了历史次优
+            // 那么之前的历史最优就变成了历史次优
             secondBestGood = bestGood;
-			//更新历史最优点
+            // 更新历史最优点
             bestGood = nGood;
-			//最优解的组索引为i（就是当前次遍历）
+            // 最优解的组索引为i（就是当前次遍历）
             bestSolutionIdx = i;
-			//更新
+            // 更新
             bestParallax = parallaxi;
-			//更新
+            // 更新
             bestP3D = vP3Di;
-			//更新
+            // 更新
             bestTriangulated = vbTriangulatedi;
         }
-        //如果当前组的good计数小于历史最优但却大于历史次优
+        // 如果当前组的good计数小于历史最优但却大于历史次优
         else if(nGood>secondBestGood)
         {
-			//说明当前组解是历史次优点，更新之
+            // 说明当前组解是历史次优点，更新之
             secondBestGood = nGood;
         }
-    }//分别验证每一组解的情况
-    /** </ul> */
+    }
 
 
-    /** <li> 最优解要满足下面的四个条件: </li> <ol>*/
-    if(secondBestGood<0.75*bestGood && 		/** <li> 最优解的good点数要足够突出 </li> */
-	   bestParallax>=minParallax && 		/** <li> 最优解的视角差大于规定的阈值 </li> */
-	   bestGood>minTriangulated && 			/** <li> 最优解的good点数要大于规定的最小的被三角化的点数量 </li> */
-	   bestGood>0.9*N)						/** <li> 最优解的good数要足够多，达到9成以上 </li> */
-       /** </ol> */
+
+    // 最优解要满足下面的四个条件
+    // 1. good点数要足够突出
+    // 2. 视角差大于规定的阈值
+    // 3. good点数要大于规定的最小的被三角化的点数量
+    // 4. good数要足够多，达到90%以上
+    if(secondBestGood<0.75*bestGood &&      
+       bestParallax>=minParallax &&
+       bestGood>minTriangulated && 
+       bestGood>0.9*N)
     {
-        /** <li> 只有上面的四个条件同时被满足时，我们才能够认为这组解是真正的最好的解、是满足要求的解 </li> */
-		
-		//从最佳的解的索引访问到R，t
+        // 从最佳的解的索引访问到R，t
         vR[bestSolutionIdx].copyTo(R21);
         vt[bestSolutionIdx].copyTo(t21);
-		//获得最佳解时，对特征点三角化测量得到的空间坐标
+        // 获得最佳解时，对特征点三角化测量得到的空间坐标
         vP3D = bestP3D;
-		//获取特征点的被成功进行三角化的标记
+        // 获取特征点的被成功进行三角化的标记
         vbTriangulated = bestTriangulated;
 
-		//返回真，找到了最好的解
+        //返回真，找到了最好的解
         return true;
     }
-	//没有找到，返回false
     return false;
-    /** </ul> */
 }
 
 
