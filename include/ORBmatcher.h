@@ -144,14 +144,21 @@ public:
 
     // Matching for the Map Initialization (only used in the monocular case)
     /**
-     * @brief 只在单目情况下使用的，根据初始的地图进行匹配
+     * @brief 单目初始化中用于参考帧和当前帧的特征点匹配
+     * Step 1 构建旋转直方图
+     * Step 2 在半径窗口内搜索当前帧F2中所有的候选匹配特征点 
+     * Step 3 遍历搜索搜索窗口中的所有潜在的匹配候选点，找到最优的和次优的
+     * Step 4 对最优次优结果进行检查，满足阈值、最优/次优比例，删除重复匹配
+     * Step 5 计算匹配点旋转角度差所在的直方图
+     * Step 6 筛除旋转直方图中“非主流”部分
+     * Step 7 将最后通过筛选的匹配好的特征点保存
      * 
-     * @param[in] F1                帧1
-     * @param[in] F2                帧2
-     * @param[out] vbPrevMatched    两帧之间的匹配关系，这个变量首先向函数输入帧1中的的特征点，然后被赋值为和下面的这个参数一样的输出结果 
-     * @param[out] vnMatches12      两帧之间的匹配关系
-     * @param[in] windowSize        搜索窗口的大小
-     * @return int                  匹配成功的点的个数
+     * @param[in] F1                        初始化参考帧                  
+     * @param[in] F2                        当前帧
+     * @param[in & out] vbPrevMatched       本来存储的是参考帧的所有特征点坐标，该函数更新为匹配好的当前帧的特征点坐标
+     * @param[in & out] vnMatches12         保存参考帧F1中特征点是否匹配上，index保存是F1对应特征点索引，值保存的是匹配好的F2特征点索引
+     * @param[in] windowSize                搜索窗口
+     * @return int                          返回成功匹配的特征点数目
      */
     int SearchForInitialization(Frame &F1, Frame &F2, std::vector<cv::Point2f> &vbPrevMatched, std::vector<int> &vnMatches12, int windowSize=10);
 
@@ -235,14 +242,14 @@ protected:
      */
     float RadiusByViewingCos(const float &viewCos);
 
-
     /**
-     * @brief 计算旋转误差直方图 rotHist 中,累计的点最多的三个index 
-     * @param[in] histo     旋转误差直方图数据
-     * @param[in] L         旋转误差直方图长度
-     * @param[out] ind1     最多的index         
-     * @param[out] ind2     次多的index
-     * @param[out] ind3     第三多的index
+     * @brief 筛选出在旋转角度差落在在直方图区间内数量最多的前三个bin的索引
+     * 
+     * @param[in] histo         匹配特征点对旋转方向差直方图
+     * @param[in] L             直方图尺寸
+     * @param[in & out] ind1          bin值第一大对应的索引
+     * @param[in & out] ind2          bin值第二大对应的索引
+     * @param[in & out] ind3          bin值第三大对应的索引
      */
     void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
 
