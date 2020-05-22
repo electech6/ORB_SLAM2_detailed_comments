@@ -386,7 +386,7 @@ cv::Mat Tracking::GrabImageMonocular(
         mCurrentFrame = Frame(
             mImGray,
             timestamp,
-            mpIniORBextractor,      //LNOTICE 这个使用的是初始化的时候的ORB特征点提取器
+            mpIniORBextractor,      //初始化ORB特征点提取器会提取2倍的指定特征点数目
             mpORBVocabulary,
             mK,
             mDistCoef,
@@ -396,7 +396,7 @@ cv::Mat Tracking::GrabImageMonocular(
         mCurrentFrame = Frame(
             mImGray,
             timestamp,
-            mpORBextractorLeft,     //NOTICE 当程序正常运行的时候使用的是正常的ORB特征点提取器
+            mpORBextractorLeft,     //正常运行的时的ORB特征点提取器，提取指定数目特征点
             mpORBVocabulary,
             mK,
             mDistCoef,
@@ -410,16 +410,16 @@ cv::Mat Tracking::GrabImageMonocular(
     return mCurrentFrame.mTcw.clone();
 }
 
-/**
- * @brief Tracking 线程
- * 
+/*
+ * @brief Main tracking function. It is independent of the input sensor.
+ *
+ * Tracking 线程
  */
 void Tracking::Track()
 {
     // track包含两部分：估计运动、跟踪局部地图
     
-    // mState为tracking的状态机
-    // SYSTME_NOT_READY, NO_IMAGE_YET, NOT_INITIALIZED, OK, LOST
+    // mState为tracking的状态，包括 SYSTME_NOT_READY, NO_IMAGE_YET, NOT_INITIALIZED, OK, LOST
     // 如果图像复位过、或者第一次运行，则为NO_IMAGE_YET状态
     if(mState==NO_IMAGES_YET)
     {
@@ -430,30 +430,29 @@ void Tracking::Track()
     mLastProcessedState=mState;
 
     // Get Map Mutex -> Map cannot be changed
-    //其实也就只有在这里才上了一次锁
-    //? 疑问:这样子不是在大部分的时间中阻止了对地图的更新吗?
-    // -- 不过应该注意到ORB-SLAM的主要耗时在特征点的提取和匹配部分,这些部分具体体现在帧的构造函数中,而在那个时候地图是没有被上锁的,
-    // -- 还是有足够的时间更新地图的
+    // 上锁。保证地图不会发生变化
+    //? 疑问:这样子会不会影响地图的更新?
+    // 回答：主要耗时在构造帧中特征点的提取和匹配部分,在那个时候地图是没有被上锁的,有足够的时间更新地图
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
-    // Step 1 初始化
+    // Step 1：初始化
     if(mState==NOT_INITIALIZED)
     {
         if(mSensor==System::STEREO || mSensor==System::RGBD)
-            //双目初始化(RGBD相机也当做为双目相机来看待)
+            //双目RGBD相机的初始化共用一个函数
             StereoInitialization();
         else
             //单目初始化
             MonocularInitialization();
 
-        //这一帧处理完成了,更新帧绘制器中存储的最近的一份状态
+        //更新帧绘制器中存储的最新状态
         mpFrameDrawer->Update(this);
 
         //这个状态量在上面的初始化函数中被更新
         if(mState!=OK)
             return;
     }
-    // Step 2 跟踪
+    // Step 2：跟踪
     else
     {
         // System is initialized. Track Frame.
@@ -884,33 +883,31 @@ void Tracking::StereoInitialization()
  */
 void Tracking::MonocularInitialization()
 {
-    // 如果单目初始器还没有被创建，则创建单目初始器 NOTICE 也只有单目会使用到这个
+    // Step 1 如果单目初始器还没有被创建，则创建。后面如果重新初始化时会清掉这个
     if(!mpInitializer)
     {
         // Set Reference Frame
         // 单目初始帧的特征点数必须大于100
         if(mCurrentFrame.mvKeys.size()>100)
-        
         {
-            // step 1：得到用于初始化的第一帧，初始化需要两帧
+            // 初始化需要两帧，分别是mInitialFrame，mCurrentFrame
             mInitialFrame = Frame(mCurrentFrame);
-            // 记录最近的一帧
+            // 用当前帧更新上一帧
             mLastFrame = Frame(mCurrentFrame);
-            // mvbPrevMatched最大的情况就是所有特征点都被跟踪上
-            //因为当前帧会变成"上一帧"",所以存储到了这个变量中
+            // mvbPrevMatched  记录"上一帧"所有特征点
             mvbPrevMatched.resize(mCurrentFrame.mvKeysUn.size());
             for(size_t i=0; i<mCurrentFrame.mvKeysUn.size(); i++)
                 mvbPrevMatched[i]=mCurrentFrame.mvKeysUn[i].pt;
 
-            // 这句判断其实看上去有点多余，不过也是在析构指针指向的对象之前先检查一下，来避免出现段错误
-            // --- 不对，就是多余！ 因为单目初始化器还没有被构建，我们才来到这个分支的
+            // 删除前判断一下，来避免出现段错误。不过在这里是多余的判断
+            // 不过在这里是多余的判断，因为前面已经判断过了
             if(mpInitializer)
                 delete mpInitializer;
 
             // 由当前帧构造初始器 sigma:1.0 iterations:200
             mpInitializer =  new Initializer(mCurrentFrame,1.0,200);
 
-            // -1 表示没有任何匹配。这里面存储的是匹配的点的id
+            // 初始化为-1 表示没有任何匹配。这里面存储的是匹配的点的id
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
 
             return;
@@ -919,9 +916,8 @@ void Tracking::MonocularInitialization()
     else    //如果单目初始化器已经被创建
     {
         // Try to initialize
-        // step 2：如果当前帧特征点数大于100，则得到用于单目初始化的第二帧
-        // 如果当前帧特征点太少，重新构造初始器
-        // NOTICE 因此只有连续两帧的特征点个数都大于100时，才能继续进行初始化过程
+        // Step 2 如果当前帧特征点数太少（不超过100），则重新构造初始器
+        // NOTICE 只有连续两帧的特征点个数都大于100时，才能继续进行初始化过程
         if((int)mCurrentFrame.mvKeys.size()<=100)
         {
             delete mpInitializer;
@@ -931,13 +927,14 @@ void Tracking::MonocularInitialization()
         }
 
         // Find correspondences
-        // step 3：在mInitialFrame与mCurrentFrame中找匹配的特征点对
-        // mvbPrevMatched为前一帧的特征点，存储了mInitialFrame中哪些点将进行接下来的匹配
-        // mvIniMatches存储mInitialFrame,mCurrentFrame之间匹配的特征点
+        // Step 3 在mInitialFrame与mCurrentFrame中找匹配的特征点对
         ORBmatcher matcher(
-            0.9,        //最佳的和次佳评分的比值阈值
+            0.9,        //最佳的和次佳特征点评分的比值阈值，这里是比较宽松的，跟踪时一般是0.7
             true);      //检查特征点的方向
-        //针对单目初始化的时候,进行特征点的匹配
+
+        // 对 mInitialFrame,mCurrentFrame 进行特征点匹配
+        // mvbPrevMatched为参考帧的特征点坐标，初始化存储的是mInitialFrame中特征点坐标，匹配后存储的是匹配好的当前帧的特征点坐标
+        // mvIniMatches 保存参考帧F1中特征点是否匹配上，index保存是F1对应特征点索引，值保存的是匹配好的F2特征点索引
         int nmatches = matcher.SearchForInitialization(
             mInitialFrame,mCurrentFrame,    //初始化时的参考帧和当前帧
             mvbPrevMatched,                 //在初始化参考帧中提取得到的特征点
@@ -945,7 +942,7 @@ void Tracking::MonocularInitialization()
             100);                           //搜索窗口大小
 
         // Check if there are enough correspondences
-        // step 4：如果初始化的两帧之间的匹配点太少，重新初始化
+        // Step 4 验证匹配结果，如果初始化的两帧之间的匹配点太少，重新初始化
         if(nmatches<100)
         {
             delete mpInitializer;
@@ -957,7 +954,7 @@ void Tracking::MonocularInitialization()
         cv::Mat tcw; // Current Camera Translation
         vector<bool> vbTriangulated; // Triangulated Correspondences (mvIniMatches)
 
-        // step 5：通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints
+        // Step 5 通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints
         if(mpInitializer->Initialize(
             mCurrentFrame,      //当前帧
             mvIniMatches,       //当前帧和参考帧的特征点的匹配关系
@@ -965,8 +962,7 @@ void Tracking::MonocularInitialization()
             mvIniP3D,           //进行三角化得到的空间点集合
             vbTriangulated))    //以及对应于mvIniMatches来讲,其中哪些点被三角化了
         {
-            //当初始化成功的时候
-            // step 6：删除那些无法进行三角化的匹配点
+            // Step 6 初始化成功后，删除那些无法进行三角化的匹配点
             for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++)
             {
                 if(mvIniMatches[i]>=0 && !vbTriangulated[i])
@@ -977,15 +973,15 @@ void Tracking::MonocularInitialization()
             }
 
             // Set Frame Poses
-            // 将初始化的第一帧作为世界坐标系，因此第一帧变换矩阵为单位矩阵
+            // Step 7 将初始化的第一帧作为世界坐标系，因此第一帧变换矩阵为单位矩阵
             mInitialFrame.SetPose(cv::Mat::eye(4,4,CV_32F));
-            // 由Rcw和tcw构造Tcw,并赋值给mTcw，mTcw为世界坐标系到该帧的变换矩阵
+            // 由Rcw和tcw构造Tcw,并赋值给mTcw，mTcw为世界坐标系到相机坐标系的变换矩阵
             cv::Mat Tcw = cv::Mat::eye(4,4,CV_32F);
             Rcw.copyTo(Tcw.rowRange(0,3).colRange(0,3));
             tcw.copyTo(Tcw.rowRange(0,3).col(3));
             mCurrentFrame.SetPose(Tcw);
 
-            // step 6：将三角化得到的3D点包装成MapPoints
+            // Step 8 创建初始化地图点MapPoints
             // Initialize函数会得到mvIniP3D，
             // mvIniP3D是cv::Point3f类型的一个容器，是个存放3D点的临时变量，
             // CreateInitialMapMonocular将3D点包装成MapPoint类型存入KeyFrame和Map中
@@ -1509,7 +1505,7 @@ bool Tracking::TrackLocalMap()
  */
 bool Tracking::NeedNewKeyFrame()
 {
-    // step 1：如果用户在界面上选择重定位，那么将不插入关键帧
+    // ?step 1：如果用户在界面上选择重定位，那么将不插入关键帧
     // 由于插入关键帧过程中会生成MapPoint，因此用户选择重定位后地图上的点云和关键帧都不会再增加
     if(mbOnlyTracking)
         return false;
