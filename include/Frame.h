@@ -223,17 +223,15 @@ public:
      */
     bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 
-	//获取指定区域（x,y,r）内的特征点
     /**
-     * @brief 获取指定区域（x,y,r）内的特征点 \n
-     * @details 该成员函数不会修改任何类内成员变量
+     * @brief 找到在 以x,y为中心,半径为r的圆形内且金字塔层级在[minLevel, maxLevel]的特征点
      * 
-     * @param[in] x                 区域中心x坐标
-     * @param[in] y                 区域中心y坐标
-     * @param[in] r                 区域的半径r
-     * @param[in] minLevel          搜索的图像金字塔层数的下限,也可以理解为最小尺度
-     * @param[in] maxLevel          搜索的图像金字塔层数的上限，同样可以理解为最大尺度
-     * @return vector<size_t>       包含有这个区域内所有特征点的向量，该向量中存储的的是特征点的序号
+     * @param[in] x                     特征点坐标x
+     * @param[in] y                     特征点坐标y
+     * @param[in] r                     搜索半径 
+     * @param[in] minLevel              最小金字塔层级
+     * @param[in] maxLevel              最大金字塔层级
+     * @return vector<size_t>           返回搜索到的候选匹配点id
      */
     vector<size_t> GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel=-1, const int maxLevel=-1) const;
 

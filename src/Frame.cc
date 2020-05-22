@@ -668,46 +668,43 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     /** </ul> */
 }
 
-//找到在 以x,y为中心,半径为r的圆形内且在[minLevel, maxLevel]的特征点
+/**
+ * @brief 找到在 以x,y为中心,半径为r的圆形内且金字塔层级在[minLevel, maxLevel]的特征点
+ * 
+ * @param[in] x                     特征点坐标x
+ * @param[in] y                     特征点坐标y
+ * @param[in] r                     搜索半径 
+ * @param[in] minLevel              最小金字塔层级
+ * @param[in] maxLevel              最大金字塔层级
+ * @return vector<size_t>           返回搜索到的候选匹配点id
+ */
 vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel, const int maxLevel) const
 {
-    /** 步骤： <ul> */
-	//生成用于存储搜索结果的vector
+	// 存储搜索结果的vector
     vector<size_t> vIndices;
-	//预分配空间
     vIndices.reserve(N);
 
-	
-    /** <li> 1.<b>检查一</b>：检查圆形区域是否在图像中，具体做法是分别求圆形搜索区域的上下左右四个边界是否能够满足图像的边界条件。 </li> \n
-     * 这里的边界条件以圆的左边界为例，就是首先求出左边界所在的图像网格列，然后判断这个网格列位置是否超过了图像网格的上限。类似这样：\n
-     * <img src="../imgs/1.png" alt="图例">
-    */
+    // Step 1 计算半径为r圆左右上下边界所在的网格列和行的id
+    // 查找半径为r的圆左侧边界所在网格列坐标。这个地方有点绕，慢慢理解下：
+    // (mnMaxX-mnMinX)/FRAME_GRID_COLS：表示列方向每个网格可以平均分得几个像素（肯定大于1）
+    // mfGridElementWidthInv=FRAME_GRID_COLS/(mnMaxX-mnMinX) 是上面倒数，表示每个像素可以均分几个网格列（肯定小于1）
+	// (x-mnMinX-r)，可以看做是从图像的左边界mnMinX到半径r的圆的左边界区域占的像素列数
+	// 两者相乘，就是求出那个半径为r的圆的左侧边界在哪个网格列中
+    // 保证nMinCellX 结果大于等于0
+    const int nMinCellX = max(0,(int)floor( (x-mnMinX-r)*mfGridElementWidthInv));
 
-   //下面的这段计算的代码其实可以这样理解：
-	//首先(mnMaxX-mnMinX)/FRAME_GRID_COLS表示每列网格可以平均分得几个像素坐标的列
-	//那么它的倒数，就可以表示每个像素列相当于多少（<1）个网格的列
-	//而前面的(x-mnMinX-r)，可以看做是从图像的左边界到半径r的圆的左边界区域占的像素列数
-	//两者相乘，就是求出那个半径为r的圆的左侧边界在那个网格列中。这个变量的名其实也是这个意思
-    const int nMinCellX = max(0,												//这个用来确保最后的值>0
-							  //mnMinX是图像的边界
-							  (int)floor(			//floor，小于等于X的最大整数
-								  //mfGridElementWidthInv=FRAME_GRID_COLS/(mnMaxX-mnMinX)
-								  (x-mnMinX-r)*mfGridElementWidthInv)
-								);
-	//如果最终求得的圆的左边界所在的网格列超过了设定了上限，那么就说明计算出错，找不到符合要求的特征点，返回空vector
+
+	// 如果最终求得的圆的左边界所在的网格列超过了设定了上限，那么就说明计算出错，找不到符合要求的特征点，返回空vector
     if(nMinCellX>=FRAME_GRID_COLS)
         return vIndices;
 
-	//NOTICE 注意这里的网格列也是从0开始编码的
-    const int nMaxCellX = min((int)FRAME_GRID_COLS-1,		//最右侧的网格列id
-							  (int)ceil(					//ceil，大于X的最小整数
-									//这里的算式其实是和上面非常相近的，把-r换成了+r
-								  (x-mnMinX+r)*mfGridElementWidthInv));
-	//如果计算出的圆右边界所在的网格不合法，也说明找不到要求的特征点，直接返回空vector
+	// 计算圆所在的右边界网格列索引
+    const int nMaxCellX = min((int)FRAME_GRID_COLS-1, (int)ceil((x-mnMinX+r)*mfGridElementWidthInv));
+	// 如果计算出的圆右边界所在的网格不合法，说明该特征点不好，直接返回空vector
     if(nMaxCellX<0)
         return vIndices;
 
-	//后面的操作也都是类似的，计算出这个圆上下边界所在的网格行的id，不再注释
+	//后面的操作也都是类似的，计算出这个圆上下边界所在的网格行的id
     const int nMinCellY = max(0,(int)floor((y-mnMinY-r)*mfGridElementHeightInv));
     if(nMinCellY>=FRAME_GRID_ROWS)
         return vIndices;
@@ -716,68 +713,50 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
     if(nMaxCellY<0)
         return vIndices;
 
-    /** <li> 2. <b>检查二</b>:检查需要搜索的图像金字塔层数范围是否符合要求 </li> */
-	//可是如果bCheckLevels==0就说明minLevel<=0且maxLevel<0,或者是只要其中有一个层大于0就可以
-	//TODO 这又意味着什么嘞？层为负的有什么意义？这个需要阅读ORB特征提取那边儿才能够理解
-	//注意这里的minLevel、maxLevel都是函数的入口参数
+    // 检查需要搜索的图像金字塔层数范围是否符合要求
+    //? 疑似bug。(minLevel>0) 后面条件 (maxLevel>=0)肯定成立
+    //? 改为 const bool bCheckLevels = (minLevel>=0) || (maxLevel>=0);
     const bool bCheckLevels = (minLevel>0) || (maxLevel>=0);
 
-    /** <li> 3. 遍历圆形区域内的所有网格  </li> <ul>*/
-
-	//开始遍历指定区域内的所有网格（X方向）
+    // Step 2 遍历圆形区域内的所有网格，寻找满足条件的候选特征点，并将其index放到输出里
     for(int ix = nMinCellX; ix<=nMaxCellX; ix++)
     {
-		//开始遍历指定区域内的所有网格（Y方向）
         for(int iy = nMinCellY; iy<=nMaxCellY; iy++)
         {
-            /** <li> 3.1 获取这个网格内的所有特征点在 Frame::mvKeysUn 中的索引,其实也就是得到校正后的特征点。</li>*/
+            // 获取这个网格内的所有特征点在 Frame::mvKeysUn 中的索引
             const vector<size_t> vCell = mGrid[ix][iy];
-			/** <li> 3.2 如果这个图像网格中没有特征点，那么就直接跳过这个网格. </li> */
+			// 如果这个网格中没有特征点，那么跳过这个网格继续下一个
             if(vCell.empty())
                 continue;
 
-            /** <li> 3.3 如果这个网格中有特征点，那么遍历这个图像网格中所有的特征点 </li> <ul>*/
+            // 如果这个网格中有特征点，那么遍历这个图像网格中所有的特征点
             for(size_t j=0, jend=vCell.size(); j<jend; j++)
             {
-				/** <li> 3.3.1 根据索引先读取这个特征点 </li> */
+				// 根据索引先读取这个特征点 
                 const cv::KeyPoint &kpUn = mvKeysUn[vCell[j]];
-				/** <li> 3.3.2 如果给定的搜索图层范围合法，则检查这个特征点是否是在给定搜索图层范围内生成的</li> */
+				// 保证给定的搜索金字塔层级范围合法
                 if(bCheckLevels)
                 {
-					//那么就检查层
-					//cv::KeyPoint::octave中表示的是从金字塔的哪一层提取的数据
-					//@[https://www.cnblogs.com/cj695/p/4041399.html]
-					//查看提取数据的那一层特征点是否在minLevel和maxLevel之间
+					// cv::KeyPoint::octave中表示的是从金字塔的哪一层提取的数据
+					// 保证特征点是在金字塔层级minLevel和maxLevel之间，不是的话跳过
                     if(kpUn.octave<minLevel)
-						//如果不是的话，跳过这个特征点
                         continue;
-                    if(maxLevel>=0)		//TODO 为什么要强调这一点？为什么要强调给定的搜索层范围必须大于0?
+                    if(maxLevel>=0)		//? 为何特意又强调？感觉多此一举
                         if(kpUn.octave>maxLevel)
-							//如果不是的话，跳过这个特征点
                             continue;
-                }//检查这个特征点是否在指定的图像金字塔层范围之间
-                
+                }               
 
-                //通过检查，说明当前遍历到的这个特征点在指定的图像金字塔层范围之间
-                /** <li> 3.3.3 计算这个特征点到指定的搜索中心的距离（x方向和y方向），查看是否是在这个圆形区域之内。
-                 * 在的话就追加到结果的vector中。</li>*/
+                // 通过检查，计算候选特征点到圆中心的距离，查看是否是在这个圆形区域之内
                 const float distx = kpUn.pt.x-x;
                 const float disty = kpUn.pt.y-y;
-				//NOTICE 在这里，kpUn中存储的就已经是变换后的坐标、相对于整张图片来讲的坐标
 
-				//如果x方向和y方向的距离都在指定的半径之内，
+				// 如果x方向和y方向的距离都在指定的半径之内，存储其index为候选特征点
                 if(fabs(distx)<r && fabs(disty)<r)
-					//那么说明这个特征点就是我们想要的！！！将它追加到结果vector中
                     vIndices.push_back(vCell[j]);
-            }//遍历这个图像网格中所有的特征点
-            /** </ul> */
-        }//开始遍历指定区域内的所有网格（Y方向）
-    }//开始遍历指定区域内的所有网格（X方向） 
-    /** </ul> */
-
-    //返回搜索结果
+            }
+        }
+    }
     return vIndices;
-    /** </ul> */
 }
 
 
