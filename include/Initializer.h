@@ -118,12 +118,12 @@ private:
     void FindFundamental(vector<bool> &vbInliers, float &score, cv::Mat &F21);
 
     /**
-     * @brief 从特征点匹配求homography（normalized DLT），其实这里最少用四对点就能够求出来，不过这里为了和基础矩阵统一还是使用了8对点求最小二乘解
-     * @details 被FindHomography函数调用具体来算Homography矩阵
-     * @param[in]  vP1 	归一化后的点, in reference frame
-     * @param[in]  vP2 	归一化后的点, in current frame
-     * @return  cv::Mat    单应矩阵
-     * @see        Multiple View Geometry in Computer Vision - Algorithm 4.2 p109
+     * @brief 用DLT方法求解单应矩阵H
+     * 这里最少用4对点就能够求出来，不过这里为了统一还是使用了8对点求最小二乘解
+     * 
+     * @param[in] vP1               参考帧中归一化后的特征点
+     * @param[in] vP2               当前帧中归一化后的特征点
+     * @return cv::Mat              计算的单应矩阵
      */
     cv::Mat ComputeH21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
     

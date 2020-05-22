@@ -417,73 +417,42 @@ void Initializer::FindFundamental(vector<bool> &vbMatchesInliers, float &score, 
 
 
 
-// |x'|     | h1 h2 h3 ||x|
-// |y'| = a | h4 h5 h6 ||y|  简写: x' = a H x, a为一个尺度因子
-// |1 |     | h7 h8 h9 ||1|
-// 使用DLT(direct linear tranform)求解该模型
-// x' = a H x 
-// ---> (x') 叉乘 (H x)  = 0  (因为方向相同) (取前两行就可以推导出下面的了)
-// ---> Ah = 0 
-// A = | 0  0  0 -x -y -1 xy' yy' y'|  h = | h1 h2 h3 h4 h5 h6 h7 h8 h9 |
-//     |-x -y -1  0  0  0 xx' yx' x'|
-// 通过SVD求解Ah = 0，A^T*A最小特征值对应的特征向量即为解
-// 其实也就是右奇异值矩阵的最后一列
 
-//从特征点匹配求homography（normalized DLT），其实这里最少用四对点就能够求出来，不过这里为了和基础矩阵统一还是使用了8对点求最小二乘解
-/** @see Initializer::ComputeF21() */
+
+/**
+ * @brief 用DLT方法求解单应矩阵H
+ * 这里最少用4对点就能够求出来，不过这里为了统一还是使用了8对点求最小二乘解
+ * 
+ * @param[in] vP1               参考帧中归一化后的特征点
+ * @param[in] vP2               当前帧中归一化后的特征点
+ * @return cv::Mat              计算的单应矩阵
+ */
 cv::Mat Initializer::ComputeH21(
     const vector<cv::Point2f> &vP1, //归一化后的点, in reference frame
     const vector<cv::Point2f> &vP2) //归一化后的点, in current frame
 {
-    /** 该函数使用了较多的数学知识, 介绍如下. 
-     * \n 这里使用了 DLT 直接分解方法来求单应矩阵. 有两种方法都可以推导得到单应矩阵的计算形式,先介绍第一种.
-     * \n 单应矩阵的定义可列写如下:
-     * \n \f$  \begin{bmatrix} x'\\y'\\1 \end{bmatrix} = a \begin{bmatrix} h_1&h_2&h_3\\h_4&h_5&h_6\\h_7&h_8&h_9 \end{bmatrix}
-     * \begin{bmatrix} x\\y\\1 \end{bmatrix} \f$
-     * \n 其中\f$ a \f$ 是一个缩放系数. 上式可以写成矩阵形式:
-     * \n \f$ \mathbf{x}'=a\mathbf{H}\mathbf{x}  \f$
-     * \n 可以发现 \f$ \mathbf{x}' \f$和\f$ \mathbf{H}\mathbf{x} \f$的方向相同,所以他们的叉乘为0:
-     * \n \f$ \mathbf{x}' \times \mathbf{H}\mathbf{x}  \f$
-     * \n 使用 DLT 直接分解法求解. 上式可展开为:
-     * \n \f$ \begin{bmatrix} x'\\y'\\1 \end{bmatrix} \times \begin{bmatrix} h_1&h_2&h_3\\h_4&h_5&h_6\\h_7&h_8&h_9 \end{bmatrix}
-     * \begin{bmatrix} x\\y\\1 \end{bmatrix} =0 \f$
-     * \n \f$ \begin{bmatrix} 0&-1&y'\\1&0&-x'\\-y'&x'&0 \end{bmatrix} \cdot 
-     * \begin{bmatrix} xh_1+yh_2+h_3\\xh_4+yh_5+h_6\\xh_7+yh_8+h_9 \end{bmatrix} = 0 \f$
-     * \n 对于前两行,展开有:
-     * \n \f$  \begin{cases} -xh_4-yh_5-h_6+xy'h_7+yy'h_8+y'h_9=0\\ xh_1+yh_2+h_3-xx'h_7-x'yh_8-x'h_9=0 \end{cases} \f$
-     * \n 写成矩阵形式,即
-     * \n \f$  \begin{bmatrix} 0&0&0&-x&-y&-1&xy'&yy'&y'\\ x&y&1&0&0&0&-xx'&-x'y&-x' \end{bmatrix} \cdot 
-     * \begin{bmatrix} h_1\\h_2\\h_3\\h_4\\h_5\\h_6\\h_7\\h_8\\h_9 \end{bmatrix} =0 \f$
-     * \n 即得到了一个齐次方程组的形式,写成矩阵形式为:
-     * \n \f$ \mathbf{A}\cdot\mathbf{h}=0  \f$
-     * \n 这个形式就可以在后面的过程中使用奇异值分解的方法来求解.
-     */
+    // 基本原理：见附件推导过程：
+    // |x'|     | h1 h2 h3 ||x|
+    // |y'| = a | h4 h5 h6 ||y|  简写: x' = a H x, a为一个尺度因子
+    // |1 |     | h7 h8 h9 ||1|
+    // 使用DLT(direct linear tranform)求解该模型
+    // x' = a H x 
+    // ---> (x') 叉乘 (H x)  = 0  (因为方向相同) (取前两行就可以推导出下面的了)
+    // ---> Ah = 0 
+    // A = | 0  0  0 -x -y -1 xy' yy' y'|  h = | h1 h2 h3 h4 h5 h6 h7 h8 h9 |
+    //     |-x -y -1  0  0  0 xx' yx' x'|
+    // 通过SVD求解Ah = 0，A^T*A最小特征值对应的特征向量即为解
+    // 其实也就是右奇异值矩阵的最后一列
 
-    /** 另外一种求法:
-     * \n 同样地, 对于单应矩阵的定义, 缩放系数 \f$ a \neq 0 \f$ 如果不加的话,那么一般地单应矩阵中的 \f$ h_9 \neq =1\f$ 
-     * \n \f$ \begin{bmatrix} x'\\y'\\1 \end{bmatrix} = 
-     * \begin{bmatrix} h_1&h_2&h_3\\h_4&h_5&h_6\\h_7&h_8&h_9 \end{bmatrix}  \begin{bmatrix} x\\y\\1 \end{bmatrix} \f$
-     * \n 前两行除第三行:
-     * \n \f$  x'=(h_1x+h_2y+h_3)/(h_7x+h_8y+h_9) \f$
-     * \n \f$  y'=(h_4x+h_5y+h_6)/(h_7x+h_8y+h_9) \f$
-     * \n 然后整理,进行移项,有
-     * \n \f$  \begin{cases} xh_1+yh_2+h_3-x'(xh_7+yh_8+h_9)=0\\ xh_4+yh_5+h_6-y'(xh_7+y_h8+h_9)=0 \end{cases} \f$
-     * \n 然后就可以导出和上面相同的矩阵形式. 
-     */
-    /** @see 视觉SLAM十四讲P147  */
-
-    /** 最后,为了求解这个齐次方程组,利用一个现成的结论: 只需要对A进行奇异值分解, 其最小奇异值所对应的右奇异向量就是这个方程组的近似解. */ 
-
-    /** 计算步骤如下: <ul> */
 	//获取参与计算的特征点的数目
     const int N = vP1.size();
 
-    /** <li> 构造用于计算的矩阵 A </li> */
+    // 构造用于计算的矩阵 A 
     cv::Mat A(2*N,				//行，注意每一个点的数据对应两行
 			  9,				//列
-			  CV_32F); // 2N*9	//数据类型
+			  CV_32F);      	//float数据类型
 
-	//开始构造矩阵A，对于每一个点
+	// 构造矩阵A，将每个特征点添加到矩阵A中的元素
     for(int i=0; i<N; i++)
     {
 		//获取特征点对的像素坐标
@@ -514,13 +483,12 @@ cv::Mat Initializer::ComputeH21(
         A.at<float>(2*i+1,7) = -u2*v1;
         A.at<float>(2*i+1,8) = -u2;
 
-    }//对于每一个点构造矩阵A
+    }
 
-    //保存计算结果，vt中的t表示是转置
+    // 定义输出变量，u是左边的正交矩阵U， w为奇异矩阵，vt中的t表示是右正交矩阵V的转置
     cv::Mat u,w,vt;
 
-	//
-    /** <li> 使用opencv提供的进行奇异值分解的函数 cv::SVDecomp() 求解矩阵A的奇异值分解  </li> */
+	//使用opencv提供的进行奇异值分解的函数
     cv::SVDecomp(A,							//输入，待进行奇异值分解的矩阵
 				 w,							//输出，奇异值矩阵
 				 u,							//输出，矩阵U
@@ -528,13 +496,11 @@ cv::Mat Initializer::ComputeH21(
 				 cv::SVD::MODIFY_A | 		//输入，MODIFY_A是指允许计算函数可以修改待分解的矩阵，官方文档上说这样可以加快计算速度、节省内存
 				     cv::SVD::FULL_UV);		//FULL_UV=把U和VT补充成单位正交方阵
 
-	/** <li> 然后返回最小奇异值所对应的右奇异向量 </li> */
-    //注意前面说的是右奇异值矩阵的最后一列，但是在这里因为是vt，转置后了，所以是行；由于A有9列数据，故最后一列的下标为8
+	// 返回最小奇异值所对应的右奇异向量
+    // 注意前面说的是右奇异值矩阵的最后一列，但是在这里因为是vt，转置后了，所以是行；由于A有9列数据，故最后一列的下标为8
     return vt.row(8).reshape(0, 			//转换后的通道数，这里设置为0表示是与前面相同
-							 3); 			//转换后的行数
-							// v的最后一列
-    /** </ul> */
-}//计算单应矩阵H（函数）
+							 3); 			//转换后的行数,对应V的最后一列
+}
 
 // x'Fx = 0 整理可得：Af = 0
 // A = | x'x x'y x' y'x y'y y' x y 1 |, f = | f1 f2 f3 f4 f5 f6 f7 f8 f9 |
