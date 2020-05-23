@@ -90,6 +90,7 @@ void LocalMapping::Run()
             // BoW conversion and insertion in Map
             // VI-A keyframe insertion
             // 计算关键帧特征点的BoW映射，将关键帧插入地图
+            // 对新关键帧进行处理。建立新的关键帧及其属性并加入全局map
             ProcessNewKeyFrame();
 
             // Check recent MapPoints
