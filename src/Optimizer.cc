@@ -362,6 +362,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
  */
 int Optimizer::PoseOptimization(Frame *pFrame)
 {
+    // 只优化当前pose，地图点固定
     // 该优化函数主要用于Tracking线程中：运动跟踪、参考帧跟踪、地图跟踪、重定位
 
     // step 1：构造g2o优化器
@@ -392,7 +393,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     // for Monocular
     vector<g2o::EdgeSE3ProjectXYZOnlyPose*> vpEdgesMono;
     vector<size_t> vnIndexEdgeMono;
-    vpEdgesMono.reserve(N);
+    vpEdgesMono.reserve(N);                     //以 N个元素设置 vector 的大小
     vnIndexEdgeMono.reserve(N);
 
     // for Stereo
@@ -426,7 +427,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
                 // 对这个地图点的观测
                 Eigen::Matrix<double,2,1> obs;
-                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
+                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];  //mvKeysUn为原始图像提取出的特征点校正后的结果
                 obs << kpUn.pt.x, kpUn.pt.y;
                 // 新建节点,注意这个节点的只是优化位姿Pose
                 g2o::EdgeSE3ProjectXYZOnlyPose* e = new g2o::EdgeSE3ProjectXYZOnlyPose();
