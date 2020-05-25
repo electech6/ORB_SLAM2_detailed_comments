@@ -128,12 +128,12 @@ private:
     cv::Mat ComputeH21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
     
     /**
-     * @brief 从特征点匹配求fundamental matrix（normalized 8点法）
-     * @details 被FindFundamental函数调用具体来算Fundamental矩阵
-     * @param[in]  vP1 	归一化后的点, in reference frame
-     * @param[in]  vP2 	归一化后的点, in current frame
-     * @return cv::Mat  基础矩阵
-     * @see        Multiple View Geometry in Computer Vision - Algorithm 11.1 p282 (中文版 p191)
+     * @brief 根据特征点匹配求fundamental matrix（normalized 8点法）
+     * 注意F矩阵有秩为2的约束，所以需要两次SVD分解
+     * 参考： Multiple View Geometry in Computer Vision - Algorithm 11.1 p282 (中文版 p191)
+     * @param[in] vP1           参考帧中归一化后的特征点
+     * @param[in] vP2           当前帧中归一化后的特征点
+     * @return cv::Mat          最后计算得到的基础矩阵F
      */
     cv::Mat ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
 
