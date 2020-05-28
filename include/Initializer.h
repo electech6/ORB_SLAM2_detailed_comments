@@ -138,32 +138,24 @@ private:
     cv::Mat ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
 
     /**
-     * @brief 对给定的homography matrix打分
-     * @details 被FindHomography函数调用，具体来算假设使用Homography模型的得分
-     * @param[in] H21				从参考帧到当前帧的单应矩阵
-     * @param[in] H12				从当前帧到参考帧的单应矩阵
-     * @param[out] vbMatchesInliers	匹配好的特征点对的Inliers标记
-     * @param[in] sigma				方差
-     * @see
-     * - Author's paper - IV. AUTOMATIC MAP INITIALIZATION （2）
-     * - Multiple View Geometry in Computer Vision - symmetric transfer errors: 4.2.2 Geometric distance
-     * - Multiple View Geometry in Computer Vision - model selection 4.7.1 RANSAC
+     * @brief 对给定的homography matrix打分,需要使用到卡方检验的知识
+     * 
+     * @param[in] H21                       从参考帧到当前帧的单应矩阵
+     * @param[in] H12                       从当前帧到参考帧的单应矩阵
+     * @param[in] vbMatchesInliers          匹配好的特征点对的Inliers标记
+     * @param[in] sigma                     方差，默认为1
+     * @return float                        返回得分
      */
     float CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vector<bool> &vbMatchesInliers, float sigma);
     
     /**
-     * @brief 对给定的fundamental matrix打分
-     * @detials 被FindFundamental函数调用，具体来算假设使用Fundamental模型的得分
-     * @param[in] F21				从当前帧到参考帧的基础矩阵
-     * @param[out] vbMatchesInliers	匹配的特征点对属于inliers的标记
-     * @param[in] sigma				估计误差
-     * @todo  这个估计误差是啥啊
-     * @see
-     * - Author's paper - IV. AUTOMATIC MAP INITIALIZATION （2）
-     * - Multiple View Geometry in Computer Vision - symmetric transfer errors: 4.2.2 Geometric distance
-     * - Multiple View Geometry in Computer Vision - model selection 4.7.1 RANSAC
+     * @brief 对给定的Fundamental matrix打分
+     * 
+     * @param[in] F21                       当前帧和参考帧之间的基础矩阵
+     * @param[in] vbMatchesInliers          匹配的特征点对属于inliers的标记
+     * @param[in] sigma                     方差，默认为1
+     * @return float                        返回得分
      */
-
     float CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesInliers, float sigma);
 
     /**

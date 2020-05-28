@@ -42,8 +42,6 @@
 namespace ORB_SLAM2
 {
 
-
-
 /**
  * @brief 根据参考帧构造初始化器
  * 
@@ -399,6 +397,11 @@ void Initializer::FindFundamental(vector<bool> &vbMatchesInliers, float &score, 
 
         // Step 3 八点法计算基础矩阵
         cv::Mat Fn = ComputeF21(vPn1i,vPn2i);
+
+        // 基础矩阵约束：p2^t*F21*p1 = 0，其中p1,p2 为齐次化特征点坐标    
+        // 特征点归一化：vPn1 = T1 * mvKeys1, vPn2 = T2 * mvKeys2  
+        // 根据基础矩阵约束得到:(T2 * mvKeys2)^t* Hn * T1 * mvKeys1 = 0   
+        // 进一步得到:mvKeys2^t * T2^t * Hn * T1 * mvKeys1 = 0
         F21i = T2t*Fn*T1;
 
         // Step 4 利用重投影误差为当次RANSAC的结果评分
@@ -564,7 +567,15 @@ cv::Mat Initializer::ComputeF21(
     return  u*cv::Mat::diag(w)*vt;
 }
 
-//对给定的homography matrix打分,需要使用到卡方检验的知识
+/**
+ * @brief 对给定的homography matrix打分,需要使用到卡方检验的知识
+ * 
+ * @param[in] H21                       从参考帧到当前帧的单应矩阵
+ * @param[in] H12                       从当前帧到参考帧的单应矩阵
+ * @param[in] vbMatchesInliers          匹配好的特征点对的Inliers标记
+ * @param[in] sigma                     方差，默认为1
+ * @return float                        返回得分
+ */
 float Initializer::CheckHomography(
     const cv::Mat &H21,                 //从参考帧到当前帧的单应矩阵
     const cv::Mat &H12,                 //从当前帧到参考帧的单应矩阵
@@ -608,7 +619,7 @@ float Initializer::CheckHomography(
 	// 特点匹配个数
     const int N = mvMatches12.size();
 
-	// 获取从参考帧到当前帧的单应矩阵的各个元素
+	// Step 1 获取从参考帧到当前帧的单应矩阵的各个元素
     const float h11 = H21.at<float>(0,0);
     const float h12 = H21.at<float>(0,1);
     const float h13 = H21.at<float>(0,2);
@@ -637,14 +648,13 @@ float Initializer::CheckHomography(
     float score = 0;
 
     // 基于卡方检验计算出的阈值（假设测量有一个像素的偏差）
-	// 自由度为2的卡方分布，误差项有95%的概率不符合正态分布时的阈值
+	// 自由度为2的卡方分布，显著性水平为0.05，对应的临界阈值
     const float th = 5.991;
 
     //信息矩阵，方差平方的倒数
     const float invSigmaSquare = 1.0/(sigma * sigma);
 
-    // 遍历N对特征匹配点
-    // 通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权最小二乘投影误差
+    // Step 2 通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权最小二乘投影误差
     // H21 表示从img1 到 img2的变换矩阵
     // H12 表示从img2 到 img1的变换矩阵 
     for(int i = 0; i < N; i++)
@@ -652,7 +662,7 @@ float Initializer::CheckHomography(
 		// 一开始都默认为Inlier
         bool bIn = true;
 
-		// 提取参考帧和当前帧之间的特征匹配点对
+		// Step 2.1 提取参考帧和当前帧之间的特征匹配点对
         const cv::KeyPoint &kp1 = mvKeys1[mvMatches12[i].first];
         const cv::KeyPoint &kp2 = mvKeys2[mvMatches12[i].second];
         const float u1 = kp1.pt.x;
@@ -660,7 +670,7 @@ float Initializer::CheckHomography(
         const float u2 = kp2.pt.x;
         const float v2 = kp2.pt.y;
 
-        // 计算 img2 到 img1 的重投影误差
+        // Step 2.2 计算 img2 到 img1 的重投影误差
         // x2in1 = H12*x2
         // 将图像2中的特征点单应到图像1中
         // |u1|   |h11inv h12inv h13inv||u2|   |u2in1|
@@ -671,18 +681,19 @@ float Initializer::CheckHomography(
         const float u2in1 = (h11inv * u2 + h12inv * v2 + h13inv) * w2in1inv;
         const float v2in1 = (h21inv * u2 + h22inv * v2 + h23inv) * w2in1inv;
    
-        // 计算加权最小二乘误差 = ||p2(i) - H21 * p1(i)||2 = (p2.x * p2.x + p1.x + p1.x) * w
+        // 计算重投影误差 = ||p2(i) - H21 * p1(i)||2
         const float squareDist1 = (u1 - u2in1) * (u1 - u2in1) + (v1 - v2in1) * (v1 - v2in1);
         const float chiSquare1 = squareDist1 * invSigmaSquare;
 
-        // 离群点阈值分割，或者累加得分
+        // Step 2.3 用阈值标记离群点，内点的话累加得分
         if(chiSquare1>th)
-            bIn = false;
+            bIn = false;    
         else
+            // 误差越大，得分越低
             score += th - chiSquare1;
 
         // 计算从img1 到 img2 的投影变换误差
-        // x1in2 = H12*x2
+        // x1in2 = H21*x1
         // 将图像2中的特征点单应到图像1中
         // |u2|   |h11 h12 h13||u1|   |u1in2|
         // |v2| = |h21 h22 h23||v1| = |v1in2| * w1in2inv
@@ -692,17 +703,17 @@ float Initializer::CheckHomography(
         const float u1in2 = (h11*u1+h12*v1+h13)*w1in2inv;
         const float v1in2 = (h21*u1+h22*v1+h23)*w1in2inv;
 
-        // 计算加权最小二乘误差 
+        // 计算重投影误差 
         const float squareDist2 = (u2-u1in2)*(u2-u1in2)+(v2-v1in2)*(v2-v1in2);
         const float chiSquare2 = squareDist2*invSigmaSquare;
-
-        // 离群点阈值分割，或者累加得分
+ 
+        // 用阈值标记离群点，内点的话累加得分
         if(chiSquare2>th)
             bIn = false;
         else
-            score += th - chiSquare2;
+            score += th - chiSquare2;   
 
-        // 如果从img2 到 img1 和 从img1 到img2的重投影误差均满足要求，则说明是Inlier point
+        // Step 2.4 如果从img2 到 img1 和 从img1 到img2的重投影误差均满足要求，则说明是Inlier point
         if(bIn)
             vbMatchesInliers[i]=true;
         else
@@ -711,7 +722,14 @@ float Initializer::CheckHomography(
     return score;
 }
 
-
+/**
+ * @brief 对给定的Fundamental matrix打分
+ * 
+ * @param[in] F21                       当前帧和参考帧之间的基础矩阵
+ * @param[in] vbMatchesInliers          匹配的特征点对属于inliers的标记
+ * @param[in] sigma                     方差，默认为1
+ * @return float                        返回得分
+ */
 float Initializer::CheckFundamental(
     const cv::Mat &F21,             //当前帧和参考帧之间的基础矩阵
     vector<bool> &vbMatchesInliers, //匹配的特征点对属于inliers的标记
@@ -726,8 +744,8 @@ float Initializer::CheckFundamental(
     // 算法目标：检查基础矩阵
     // 检查方式：利用对极几何原理 p2^T * F * p1 = 0
     // 假设：三维空间中的点 P 在 img1 和 img2 两图像上的投影分别为 p1 和 p2（两个为同名点）
-    //   则：p2 一定存在于极线 l 上，即 p2l = 0. 而l = Fx1 = (a, b, c)^T
-    //      所以，这里的误差项 e 为 x2 到 极线 l 的距离，如果在直线上，则 e = 0
+    //   则：p2 一定存在于极线 l2 上，即 p2*l2 = 0. 而l2 = F*p1 = (a, b, c)^T
+    //      所以，这里的误差项 e 为 p2 到 极线 l2 的距离，如果在直线上，则 e = 0
     //      根据点到直线的距离公式：d = (ax + by + c) / sqrt(a * a + b * b)
     //      所以，e =  (a * p2.x + b * p2.y + c) /  sqrt(a * a + b * b)
 
@@ -761,7 +779,7 @@ float Initializer::CheckFundamental(
 	// 获取匹配的特征点对的总对数
     const int N = mvMatches12.size();
 
-	// 然后提取基础矩阵中的元素数据
+	// Step 1 提取基础矩阵中的元素数据
     const float f11 = F21.at<float>(0,0);
     const float f12 = F21.at<float>(0,1);
     const float f13 = F21.at<float>(0,2);
@@ -779,23 +797,23 @@ float Initializer::CheckFundamental(
     float score = 0;
 
     // 基于卡方检验计算出的阈值
-	// 自由度为1的卡方分布，当平方和有95%的概率不符合正态分布时的阈值
+	// 自由度为1的卡方分布，显著性水平为0.05，对应的临界阈值
     const float th = 3.841;
 
-    // 此处是为了和checkHomography 保持同一个评分制度，比如满分都是100分
+    // 自由度为2的卡方分布，显著性水平为0.05，对应的临界阈值
     const float thScore = 5.991;
 
 	// 信息矩阵，或 协方差矩阵的逆矩阵
     const float invSigmaSquare = 1.0/(sigma*sigma);
 
 
-    // 计算img1 和 img2 在估计 F 时的score值
+    // Step 2 计算img1 和 img2 在估计 F 时的score值
     for(int i=0; i<N; i++)
     {
 		//默认为这对特征点是Inliers
         bool bIn = true;
 
-	    // 提取参考帧和当前帧之间的特征匹配点对
+	    // Step 2.1 提取参考帧和当前帧之间的特征匹配点对
         const cv::KeyPoint &kp1 = mvKeys1[mvMatches12[i].first];
         const cv::KeyPoint &kp2 = mvKeys2[mvMatches12[i].second];
 
@@ -806,37 +824,24 @@ float Initializer::CheckFundamental(
         const float v2 = kp2.pt.y;
 
         // Reprojection error in second image
-        /** <li> 计算重投影误差.但是注意由于基础矩阵的定义形式: </li>
-         * \n  \f$  \mathbf{x}'\mathbf{F}\mathbf{x}=0 \f$
-         * \n 这导致它不能够像单应矩阵那个样子经过求逆直接得到点,这里是可以得到一条线. 
-         * 记 \f$ [u_1,v_1,1]^{\text{T}}  \f$ 为在参考帧上的点, \f$  [u_2,v_2,1]^{\text{T}} \f$ 为匹配的在当前帧上的特征点, 那么从当前帧(2)
-         * 到参考帧(1)的重投影产生的直线 \f$ \mathbf{l}_2  \f$ 可以按照下式计算出来:
-         * \n \f$ \mathbf{l}_2= \begin{bmatrix} a_2\\b_2\\c_2 \end{bmatrix} =
-         *    \begin{bmatrix} f_1&f_2&f_3\\ f_4&f_5&f_6\\ f_7&f_8&f_9 \end{bmatrix}^{-1}
-         *    \begin{bmatrix} u_2\\v_2\\1 \end{bmatrix}  \f$
-         * \n 其中 \f$  [a_2,b_2,1]^{\text{T}} \f$ 是直线 \f$ \mathbf{l}_2  \f$ 的参数. 
-         * 在理想状态下, 点 \f$ [u_1,v_1,1]^{\text{T}} \f$ 应该完全在直线 \f$ \mathbf{l}_2 \f$ 上.
-         * 这里的重投影误差定义的就是,原真实特征点 \f$ [u_1,v_1,1]^{\text{T}} \f$ 到根据基础矩阵反投影得到的直线 \f$ \mathbf{l}_2 \f$的距离:
-         * \n \f$ \\Delta_{1\leftarrow2} ^2= \frac{(a_2u_1+b_2v_1+c_2)^2}{(a_2^2+b_2^2)} \f$
-         * \n  同样地,也要和计算单应矩阵的评分一样,计算归一化误差:
-         * \n \f$  e_{1\leftarrow2}^2=\frac{ \Delta_{1\leftarrow2} ^2}{\sigma^2} \f$
-         */
-
-        // 计算 img1 上的点在 img2 上投影得到的极线 l2 = F21 * p1 = (a2,b2,c2)
+        // Step 2.2 计算 img1 上的点在 img2 上投影得到的极线 l2 = F21 * p1 = (a2,b2,c2)
 		const float a2 = f11*u1+f12*v1+f13;
         const float b2 = f21*u1+f22*v1+f23;
         const float c2 = f31*u1+f32*v1+f33;
     
-        // 计算误差 e = (a * p2.x + b * p2.y + c) /  sqrt(a * a + b * b)
+        // Step 2.3 计算误差 e = (a * p2.x + b * p2.y + c) /  sqrt(a * a + b * b)
         const float num2 = a2*u2+b2*v2+c2;
         const float squareDist1 = num2*num2/(a2*a2+b2*b2);
         // 带权重误差
         const float chiSquare1 = squareDist1*invSigmaSquare;
 		
-        // 阈值分割 大于就说明这个点是Outlier 
+        // Step 2.4 误差大于阈值就说明这个点是Outlier 
+        // ? 为什么判断阈值用的 th（1自由度），计算得分用的thScore（2自由度）
+        // ? 可能是为了和CheckHomography 得分统一？
         if(chiSquare1>th)
             bIn = false;
         else
+            // 误差越大，得分越低
             score += thScore - chiSquare1;
 
         // 计算img2上的点在 img1 上投影得到的极线 l1= p2 * F21 = (a1,b1,c1)
@@ -851,13 +856,13 @@ float Initializer::CheckFundamental(
         // 带权重误差
         const float chiSquare2 = squareDist2*invSigmaSquare;
 
-        // 阈值分割 大于就说明这个点是Outlier 
+        // 误差大于阈值就说明这个点是Outlier 
         if(chiSquare2>th)
             bIn = false;
         else
             score += thScore - chiSquare2;
         
-        // 保存结果
+        // Step 2.5 保存结果
         if(bIn)
             vbMatchesInliers[i]=true;
         else
@@ -1065,7 +1070,8 @@ bool Initializer::ReconstructH(
     // 目的 ：通过单应矩阵H恢复两帧图像之间的旋转矩阵R和平移向量T
     // 参考 ：Motion and structure from motion in a piecewise plannar environment.
     //        International Journal of Pattern Recognition and Artificial Intelligence, 1988
-
+    // https://www.researchgate.net/publication/243764888_Motion_and_Structure_from_Motion_in_a_Piecewise_Planar_Environment
+    
     // 流程:
     //      1. 根据H矩阵的奇异值d'= d2 或者 d' = -d2 分别计算 H 矩阵分解的 8 组解
     //        1.1 讨论 d' > 0 时的 4 组解
@@ -1100,7 +1106,7 @@ bool Initializer::ReconstructH(
     // U 奇异值分解左矩阵
     // Vt 奇异值分解右矩阵，注意函数返回的是转置
     // cv::SVD::FULL_UV 全部分解
-    // A = UAVt
+    // A = U * w * Vt
     cv::Mat U,w,Vt,V;
     cv::SVD::compute(A, w, U, Vt, cv::SVD::FULL_UV);
 
