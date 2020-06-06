@@ -198,17 +198,20 @@ public:
 
     // Check if a MapPoint is in the frustum of the camera
     // and fill variables of the MapPoint to be used by the tracking
-
     /**
-     * @brief 判断路标点是否在视野中,并且对在tracking中使用到的地图点进行处理
-     * @details 计算了重投影坐标，观测方向夹角，预测路标点在当前帧的尺度\n
-     * 猜测是这样的，如果一个点所在的视角偏离平均视角较大（程序中给的是60°），那么认为这个点不可靠
-     * 
-     * @param[in] pMP                   地图点的句柄
-     * @param[in] viewingCosLimit       视角和平均视角的方向阈值
-     * @return true                     在相机视野中
-     * @return false                    不在相机视野中
-     * @see SearchLocalPoints()
+     * @brief 判断路标点是否在视野中
+     * 步骤
+     * Step 1 获得这个地图点的世界坐标
+     * Step 2 关卡一：检查这个地图点在当前帧的相机坐标系下，是否有正的深度.如果是负的，表示出错，返回false
+     * Step 3 关卡二：将MapPoint投影到当前帧的像素坐标(u,v), 并判断是否在图像有效范围内
+     * Step 4 关卡三：计算MapPoint到相机中心的距离, 并判断是否在尺度变化的距离内
+     * Step 5 关卡四：计算当前视角和“法线”夹角的余弦值, 若小于设定阈值，返回false
+     * Step 6 根据地图点到光心的距离来预测一个尺度（仿照特征点金字塔层级）
+     * Step 7 记录计算得到的一些参数
+     * @param[in] pMP                       当前地图点
+     * @param[in] viewingCosLimit           夹角余弦，用于限制地图点和光心连线和法线的夹角
+     * @return true                         地图点合格，且在视野内
+     * @return false                        地图点不合格，抛弃
      */
     bool isInFrustum(MapPoint* pMP, float viewingCosLimit);
 
@@ -328,7 +331,7 @@ public:
     float mThDepth;
 
     // Number of KeyPoints.
-    int N; ///< KeyPoints数量
+    int N; 
 
     /**
      * @name 关于特征点
@@ -422,8 +425,8 @@ public:
     // Scale pyramid info.
     int mnScaleLevels;                  ///<图像金字塔的层数
     float mfScaleFactor;                ///<图像金字塔的尺度因子
-    float mfLogScaleFactor;             ///<图像金字塔的尺度因子的对数值？
-                                        ///@todo 为什么要计算存储这个，有什么实际意义吗
+    float mfLogScaleFactor;             ///<图像金字塔的尺度因子的对数值，用于仿照特征点尺度预测地图点的尺度
+                                  
     vector<float> mvScaleFactors;		///<图像金字塔每一层的缩放因子
     vector<float> mvInvScaleFactors;	///<以及上面的这个变量的倒数
     vector<float> mvLevelSigma2;		///@todo 目前在frame.c中没有用到，无法下定论
