@@ -67,32 +67,37 @@ public:
     // Search matches between Frame keypoints and projected MapPoints. Returns number of matches
     // Used to track the local map (Tracking)
     /**
-     * @brief 通过投影，对Local MapPoint进行跟踪
-     * @details 将Local MapPoint投影到当前帧中, 由此增加当前帧的MapPoints \n
-     * 在SearchLocalPoints()中已经将Local MapPoints重投影（isInFrustum()）到当前帧 \n
-     * 并标记了这些点是否在当前帧的视野中，即mbTrackInView \n
-     * 对这些MapPoints，在其投影点附近根据描述子距离选取匹配，以及最终的方向投票机制进行剔除
-     * @param  F           当前帧
-     * @param  vpMapPoints Local MapPoints
-     * @param  th          阈值
-     * @return             成功匹配的数量
-     * @see SearchLocalPoints() isInFrustum()
+     * @brief 通过投影地图点到当前帧，对Local MapPoint进行跟踪
+     * 步骤
+     * Step 1 遍历有效的局部地图点
+     * Step 2 设定搜索搜索窗口的大小。取决于视角, 若当前视角和平均视角夹角较小时, r取一个较小的值
+     * Step 3 通过投影点以及搜索窗口和预测的尺度进行搜索, 找出搜索半径内的候选匹配点索引
+     * Step 4 寻找候选匹配点中的最佳和次佳匹配点
+     * Step 5 筛选最佳匹配点
+     * @param[in] F                         当前帧
+     * @param[in] vpMapPoints               局部地图点，来自局部关键帧
+     * @param[in] th                        搜索范围
+     * @return int                          成功匹配的数目
      */
     int SearchByProjection(Frame &F, const std::vector<MapPoint*> &vpMapPoints, const float th=3);
 
     // Project MapPoints tracked in last frame into the current frame and search matches.
     // Used to track from previous frame (Tracking)
     /**
-     * @brief 通过投影，对上一帧的特征点进行跟踪
-     * @details 上一帧中包含了MapPoints，对这些MapPoints进行tracking，由此增加当前帧的MapPoints \n
-     * 1. 将上一帧的MapPoints投影到当前帧(根据速度模型可以估计当前帧的Tcw)
-     * 2. 在投影点附近根据描述子距离选取匹配，以及最终的方向投票机制进行剔除
-     * @param  CurrentFrame 当前帧
-     * @param  LastFrame    上一帧
-     * @param  th           阈值
-     * @param  bMono        是否为单目
-     * @return              成功匹配的数量
-     * @see SearchByBoW()
+     * @brief 将上一帧跟踪的地图点投影到当前帧，并且搜索匹配点。用于跟踪前一帧
+     * 步骤
+     * Step 1 建立旋转直方图，用于检测旋转一致性
+     * Step 2 计算当前帧和前一帧的平移向量
+     * Step 3 对于前一帧的每一个地图点，通过相机投影模型，得到投影到当前帧的像素坐标
+     * Step 4 根据相机的前后前进方向来判断搜索尺度范围
+     * Step 5 遍历候选匹配点，寻找距离最小的最佳匹配点 
+     * Step 6 计算匹配点旋转角度差所在的直方图
+     * Step 7 进行旋转一致检测，剔除不一致的匹配
+     * @param[in] CurrentFrame          当前帧
+     * @param[in] LastFrame             上一帧
+     * @param[in] th                    搜索范围阈值，默认单目为7，双目15
+     * @param[in] bMono                 是否为单目
+     * @return int                      成功匹配的数量
      */
     int SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono);
 
@@ -127,24 +132,26 @@ public:
     // Search matches between MapPoints in a KeyFrame and ORB in a Frame.
     // Brute force constrained to ORB that belong to the same vocabulary node (at a certain level)
     // Used in Relocalisation and Loop Detection
-    /**
-     * @brief 通过词包，对关键帧的特征点进行跟踪
-     * @details KeyFrame中包含了MapPoints，对这些MapPoints进行tracking \n
-     * 由于每一个MapPoint对应有描述子，因此可以通过描述子距离进行跟踪 \n
-     * 为了加速匹配过程，将关键帧和当前帧的描述子划分到特定层的nodes中 \n
-     * 对属于同一node的描述子计算距离进行匹配 \n
-     * 通过距离阈值、比例阈值和角度投票进行剔除误匹配
-     * @param  pKF               KeyFrame
-     * @param  F                 Current Frame
-     * @param  vpMapPointMatches F中MapPoints对应的匹配，NULL表示未匹配
-     * @return                   成功匹配的数量
-     */
+    /*
+    * @brief 通过词袋，对关键帧的特征点进行跟踪
+    * 步骤
+    * Step 1：分别取出属于同一node的ORB特征点(只有属于同一node，才有可能是匹配点)
+    * Step 2：遍历KF中属于该node的特征点
+    * Step 3：遍历F中属于该node的特征点，寻找最佳匹配点
+    * Step 4：根据阈值 和 角度投票剔除误匹配
+    * Step 5：根据方向剔除误匹配的点
+    * @param  pKF               KeyFrame
+    * @param  F                 Current Frame
+    * @param  vpMapPointMatches F中MapPoints对应的匹配，NULL表示未匹配
+    * @return                   成功匹配的数量
+    */
     int SearchByBoW(KeyFrame *pKF, Frame &F, std::vector<MapPoint*> &vpMapPointMatches);
     int SearchByBoW(KeyFrame *pKF1, KeyFrame* pKF2, std::vector<MapPoint*> &vpMatches12);
 
     // Matching for the Map Initialization (only used in the monocular case)
     /**
      * @brief 单目初始化中用于参考帧和当前帧的特征点匹配
+     * 步骤
      * Step 1 构建旋转直方图
      * Step 2 在半径窗口内搜索当前帧F2中所有的候选匹配特征点 
      * Step 3 遍历搜索搜索窗口中的所有潜在的匹配候选点，找到最优的和次优的
@@ -152,7 +159,6 @@ public:
      * Step 5 计算匹配点旋转角度差所在的直方图
      * Step 6 筛除旋转直方图中“非主流”部分
      * Step 7 将最后通过筛选的匹配好的特征点保存
-     * 
      * @param[in] F1                        初始化参考帧                  
      * @param[in] F2                        当前帧
      * @param[in & out] vbPrevMatched       本来存储的是参考帧的所有特征点坐标，该函数更新为匹配好的当前帧的特征点坐标
