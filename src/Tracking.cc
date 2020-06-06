@@ -990,26 +990,23 @@ void Tracking::MonocularInitialization()
     }//如果单目初始化器已经被创建
 }
 
-/*
- * @brief CreateInitialMapMonocular
- *
- * 为单目摄像头三角化得到的点生成MapPoints
+
+/**
+ * @brief 为单目摄像头三角化得到的点生成MapPoints
+ * 
  */
-//使用在单目初始化过程中三角化得到的点,包装成为地图点,并且生成初始地图
 void Tracking::CreateInitialMapMonocular()
 {
     // Create KeyFrames 认为单目初始化时候的参考帧和当前帧都是关键帧
     KeyFrame* pKFini = new KeyFrame(mInitialFrame,mpMap,mpKeyFrameDB);  // 第一帧
     KeyFrame* pKFcur = new KeyFrame(mCurrentFrame,mpMap,mpKeyFrameDB);  // 第二帧
 
-    // step 1：将初始关键帧的描述子转为BoW
+    // Step 1 将初始关键帧,当前关键帧的描述子转为BoW
     pKFini->ComputeBoW();
-    // step 2：将当前关键帧的描述子转为BoW
     pKFcur->ComputeBoW();
 
     // Insert KFs in the map
-    // step 3：将关键帧插入到地图
-    // 凡是关键帧，都要插入地图
+    // Step 2 将关键帧插入到地图
     mpMap->AddKeyFrame(pKFini);
     mpMap->AddKeyFrame(pKFcur);
 
@@ -1017,6 +1014,7 @@ void Tracking::CreateInitialMapMonocular()
     // step 4：将3D点包装成MapPoints
     for(size_t i=0; i<mvIniMatches.size();i++)
     {
+        // 没有匹配，跳过
         if(mvIniMatches[i]<0)
             continue;
 
@@ -1429,13 +1427,13 @@ bool Tracking::TrackWithMotionModel()
 
 /**
  * @brief 对Local Map的MapPoints进行跟踪
- * 
- * 1. 更新局部地图，包括局部关键帧和关键点
- * 2. 对局部MapPoints进行投影匹配
- * 3. 根据匹配对估计当前帧的姿态
- * 4. 根据姿态剔除误匹配
- * @return true if success
- * @see V-D track Local Map
+ * Step 1：更新局部关键帧 mvpLocalKeyFrames 和局部地图点 mvpLocalMapPoints
+ * Step 2：在局部地图中查找与当前帧匹配的MapPoints, 其实也就是对局部地图点进行跟踪
+ * Step 3：更新局部所有MapPoints后对位姿再次优化
+ * Step 4：更新当前帧的MapPoints被观测程度，并统计跟踪局部地图的效果
+ * Step 5：根据跟踪匹配数目及回环情况决定是否跟踪成功
+ * @return true         跟踪成功
+ * @return false        跟踪失败
  */
 bool Tracking::TrackLocalMap()
 {
@@ -1443,35 +1441,34 @@ bool Tracking::TrackLocalMap()
     // We retrieve the local map and try to find matches to points in the local map.
 
     // Update Local KeyFrames and Local Points
-    // step 1：更新局部关键帧mvpLocalKeyFrames和局部地图点mvpLocalMapPoints -- NO, 局部关键帧在这里面根本没有更新，只是利用而已
+    // Step 1：更新局部关键帧 mvpLocalKeyFrames 和局部地图点 mvpLocalMapPoints
     UpdateLocalMap();
 
-    // step 2：在局部地图中查找与当前帧匹配的MapPoints, 其实也就是对局部地图点进行跟踪
-    //? 这里的跟踪怎么理解?
+    // Step 2：在局部地图中查找与当前帧匹配的MapPoints, 其实也就是对局部地图点进行跟踪
     SearchLocalPoints();
 
     // Optimize Pose
     // 在这个函数之前，在 Relocalization、TrackReferenceKeyFrame、TrackWithMotionModel 中都有位姿优化，
-    // step 3：更新局部所有MapPoints后对位姿再次优化
+    // Step 3：更新局部所有MapPoints后对位姿再次优化
     Optimizer::PoseOptimization(&mCurrentFrame);
     mnMatchesInliers = 0;
 
     // Update MapPoints Statistics
-    // step 3：更新当前帧的MapPoints被观测程度，并统计跟踪局部地图的效果
+    // Step 4：更新当前帧的MapPoints被观测程度，并统计跟踪局部地图的效果
     for(int i=0; i<mCurrentFrame.N; i++)
     {
         if(mCurrentFrame.mvpMapPoints[i])
         {
-            // 由于当前帧的MapPoints可以被当前帧观测到，其被观测统计量加1 -- NOTICE 严格来说这里应该不是被观测
+            // 由于当前帧的MapPoints可以被当前帧观测到，其被观测统计量加1
             if(!mCurrentFrame.mvbOutlier[i])
             {
+                // 找到该点的帧数mnFound 加 1
                 mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
                 //查看当前是否是在纯定位过程
                 if(!mbOnlyTracking)
                 {
-                    // 该MapPoint被其它关键帧观测到过
-                    //NOTICE 注意这里的"Obervation"和上面的"Found"并不是一个东西
-                    //? 那么区别又在哪里呢?
+                    // 该MapPoint被观测次数大于，就将mnMatchesInliers加1
+                    //? 地图点被观测次数nObs 和 找到该点的帧数mnFound区别是什么?
                     if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
                         mnMatchesInliers++;
                 }
@@ -1479,7 +1476,9 @@ bool Tracking::TrackLocalMap()
                     // 记录当前帧跟踪到的MapPoints，用于统计跟踪效果
                     mnMatchesInliers++;
             }
-            else if(mSensor==System::STEREO)    //如果这个地图点是外点,并且当前相机输入还是双目的时候,就删除这个点;如果是其他类型的输入反而不管了...
+            //如果这个地图点是外点,并且当前相机输入还是双目的时候,就删除这个点
+            //?如果是其他类型的输入不管了?
+            else if(mSensor==System::STEREO)    
                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
 
         }
@@ -1487,7 +1486,7 @@ bool Tracking::TrackLocalMap()
 
     // Decide if the tracking was succesful
     // More restrictive if there was a relocalization recently
-    // step 4：决定是否跟踪成功
+    // Step 5：根据跟踪匹配数目及回环情况决定是否跟踪成功
     //如果最近刚刚发生了重定位,那么至少跟踪上了50个点我们才认为是跟踪上了
     if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && mnMatchesInliers<50)
         return false;
@@ -1525,7 +1524,7 @@ bool Tracking::NeedNewKeyFrame()
     // 如果关键帧比较少，则考虑插入关键帧
     // 或距离上一次重定位超过1s，则考虑插入关键帧
     if( mCurrentFrame.mnId < mnLastRelocFrameId + mMaxFrames &&     //距离上一次重定位不超过1s
-        nKFs>mMaxFrames)                                            //地图中的关键帧已经足够
+        nKFs>mMaxFrames)                                            //地图中的关键帧已经足���
         return false;
 
     // Tracked MapPoints in the reference keyframe
@@ -1751,13 +1750,15 @@ void Tracking::CreateNewKeyFrame()
 
 /**
  * @brief 对 Local MapPoints 进行跟踪
- * 
  * 在局部地图中查找在当前帧视野范围内的点，将视野范围内的点和当前帧的特征点进行投影匹配
+ * Step 1：遍历当前帧的mvpMapPoints，标记这些MapPoints不参与之后的搜索
+ * Step 2：将所有 局部MapPoints 投影到当前帧，判断是否在视野范围内
+ * Step 3：如果需要进行投影匹配的点的数目大于0，就进行投影匹配
  */
 void Tracking::SearchLocalPoints()
 {
     // Do not search map points already matched
-    // step 1：遍历当前帧的mvpMapPoints，标记这些MapPoints不参与之后的搜索
+    // Step 1：遍历当前帧的mvpMapPoints，标记这些MapPoints不参与之后的搜索
     // 因为当前的mvpMapPoints一定在当前帧的视野中
     for(vector<MapPoint*>::iterator vit=mCurrentFrame.mvpMapPoints.begin(), vend=mCurrentFrame.mvpMapPoints.end(); vit!=vend; vit++)
     {
@@ -1784,20 +1785,20 @@ void Tracking::SearchLocalPoints()
     int nToMatch=0;
 
     // Project points in frame and check its visibility
-    // step 2：将所有 局部MapPoints 投影到当前帧，判断是否在视野范围内，然后进行投影匹配
+    // Step 2：将所有 局部MapPoints 投影到当前帧，判断是否在视野范围内
     for(vector<MapPoint*>::iterator vit=mvpLocalMapPoints.begin(), vend=mvpLocalMapPoints.end(); vit!=vend; vit++)
     {
         MapPoint* pMP = *vit;
 
-        // 已经被当前帧观测到MapPoint不再判断是否能被当前帧观测到
+        // 已经被当前帧观测到的MapPoint不再需要判断是否能被当前帧观测到
         if(pMP->mnLastFrameSeen == mCurrentFrame.mnId)
             continue;
-        //局部地图中的坏点也是
+        //跳过局部地图中的坏点
         if(pMP->isBad())
             continue;
         
         // Project (this fills MapPoint variables for matching)
-        // step 2.1：判断LocalMapPoints中的点是否在在视野内
+        // 判断LocalMapPoints中的点是否在在视野内
         if(mCurrentFrame.isInFrustum(pMP,0.5))
         {
         	// 观测到该点的帧数加1，该MapPoint在某些帧的视野范围内
@@ -1807,10 +1808,9 @@ void Tracking::SearchLocalPoints()
         }
     }
 
-    //如果的确存在需要进行投影匹配的点的数目
+    // Step 3：如果需要进行投影匹配的点的数目大于0，就进行投影匹配
     if(nToMatch>0)
     {
-        
         ORBmatcher matcher(0.8);
         int th = 1;
         if(mSensor==System::RGBD)   //RGBD相机输入的时候,搜索的阈值会变得稍微大一些
@@ -1821,22 +1821,20 @@ void Tracking::SearchLocalPoints()
         if(mCurrentFrame.mnId<mnLastRelocFrameId+2)
             th=5;
 
-        // step 2.2：对视野范围内的MapPoints通过投影进行特征点匹配
+        // 对视野范围内的MapPoints通过投影进行特征点匹配
         matcher.SearchByProjection(mCurrentFrame,mvpLocalMapPoints,th);
     }
 }
 
 /**
- * @brief 更新LocalMap
+ * @brief 更新局部地图 LocalMap
  *
- * 局部地图包括： \n
- * - K1个关键帧、K2个临近关键帧和参考关键帧
- * - 由这些关键帧观测到的MapPoints
+ * 局部地图包括：共视关键帧、临近关键帧及其子父关键帧，由这些关键帧观测到的MapPoints
  */
 void Tracking::UpdateLocalMap()
 {
     // This is for visualization
-    // 这行程序放在UpdateLocalPoints函数后面是不是好一些
+    // 设置参考地图点用于绘图显示局部地图点（红色）
     mpMap->SetReferenceMapPoints(mvpLocalMapPoints);
 
     // Update
@@ -1845,18 +1843,16 @@ void Tracking::UpdateLocalMap()
     UpdateLocalPoints();
 }
 
-/*
- * @brief 更新局部关键点，called by UpdateLocalMap()
+/**
+ * @brief 更新局部地图点（来自局部关键帧）
  * 
- * 局部关键帧mvpLocalKeyFrames的MapPoints，更新mvpLocalMapPoints
- * \n 我觉得就是先把局部地图清空，然后将局部关键帧的地图点添加到局部地图中
  */
 void Tracking::UpdateLocalPoints()
 {
-    // step 1：清空局部MapPoints
+    // Step 1：清空局部MapPoints
     mvpLocalMapPoints.clear();
 
-    // step 2：遍历局部关键帧 in mvpLocalKeyFrames
+    // Step 2：遍历局部关键帧 mvpLocalKeyFrames
     for(vector<KeyFrame*>::const_iterator itKF=mvpLocalKeyFrames.begin(), itEndKF=mvpLocalKeyFrames.end(); itKF!=itEndKF; itKF++)
     {
         KeyFrame* pKF = *itKF;
@@ -1868,10 +1864,8 @@ void Tracking::UpdateLocalPoints()
             MapPoint* pMP = *itMP;
             if(!pMP)
                 continue;
-            // mnTrackReferenceForFrame 防止重复添加局部MapPoint
-            //? 目前不太懂,变量名为什么取这个,以及在之前的什么地方会出现 这个条件被满足 的可能
-            //取这个名字的原因可能是表示最近一次追踪到这个地图点是在哪一帧
-            //应该是已经添加过了
+            // 用该地图点的成员变量mnTrackReferenceForFrame 记录当前帧的id
+            // 表示它已经是当前帧的局部地图点了，可以防止重复添加局部地图点
             if(pMP->mnTrackReferenceForFrame==mCurrentFrame.mnId)
                 continue;
             if(!pMP->isBad())
@@ -1884,15 +1878,18 @@ void Tracking::UpdateLocalPoints()
 }
 
 /**
- * @brief 更新局部关键帧，called by UpdateLocalMap()
- *
- * 遍历当前帧的MapPoints，将观测到这些MapPoints的关键帧和相邻的关键帧取出，更新 mvpLocalKeyFrames
- * //?怎么定义"相邻关键帧?" -- 从程序中来看指的就是他们的具有较好的共视关键帧,以及其父关键帧和子关键帧
+ * @brief 更新局部关键帧
+ * 方法是遍历当前帧的MapPoints，将观测到这些MapPoints的关键帧和相邻的关键帧及其父子关键帧，作为mvpLocalKeyFrames
+ * Step 1：遍历当前帧的MapPoints，记录所有能观测到当前帧MapPoints的关键帧 
+ * Step 2：更新局部关键帧（mvpLocalKeyFrames），添加局部关键帧有三个策略
+ * Step 2.1 策略1：能观测到当前帧MapPoints的关键帧作为局部关键帧 （将邻居拉拢入伙）
+ * Step 2.2 策略2：遍历策略1得到的局部关键帧里共视程度很高的关键帧，将他们的家人和邻居作为局部关键帧
+ * Step 3：更新当前帧的参考关键帧，与自己共视程度最高的关键帧作为参考关键帧
  */
 void Tracking::UpdateLocalKeyFrames()
 {
     // Each map point vote for the keyframes in which it has been observed
-    // step 1：遍历当前帧的MapPoints，记录所有能观测到当前帧MapPoints的关键帧 -- 也就是投票
+    // Step 1：遍历当前帧的MapPoints，记录所有能观测到当前帧MapPoints的关键帧 
     map<KeyFrame*,int> keyframeCounter;
     for(int i=0; i<mCurrentFrame.N; i++)
     {
@@ -1901,11 +1898,11 @@ void Tracking::UpdateLocalKeyFrames()
             MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
             if(!pMP->isBad())
             {
-                // 能观测到当前帧MapPoints的关键帧
+                // 观测到该MapPoint的KF和该MapPoint在KF中的索引
                 const map<KeyFrame*,size_t> observations = pMP->GetObservations();
                 //这里由于一个地图点可以被多个关键帧观测到,因此对于每一次观测,都获得观测到这个地图点的关键帧,并且对关键帧进行投票
                 for(map<KeyFrame*,size_t>::const_iterator it=observations.begin(), itend=observations.end(); it!=itend; it++)
-                    keyframeCounter[it->first]++;
+                    keyframeCounter[it->first]++;       //? 为什么可以++？好像没有申请内存？
             }
             else
             {
@@ -1918,11 +1915,11 @@ void Tracking::UpdateLocalKeyFrames()
     if(keyframeCounter.empty())
         return;
 
-    //? 存储具有最多观测次数的关键帧?
+    // 存储具有最多观测次数（max）的关键帧
     int max=0;
     KeyFrame* pKFmax= static_cast<KeyFrame*>(NULL);
 
-    // step 2：更新局部关键帧（mvpLocalKeyFrames），添加局部关键帧有三个策略
+    // Step 2：更新局部关键帧（mvpLocalKeyFrames），添加局部关键帧有三个策略
     // 先清空局部关键帧
     mvpLocalKeyFrames.clear();
     //? 提问:为什么要乘3呢? 
@@ -1930,11 +1927,12 @@ void Tracking::UpdateLocalKeyFrames()
 
     // All keyframes that observe a map point are included in the local map. Also check which keyframe shares most points
     // V-D K1: shares the map points with current frame
-    // 策略1：能观测到当前帧MapPoints的关键帧作为局部关键帧
+    // Step 2.1 策略1：能观测到当前帧MapPoints的关键帧作为局部关键帧 （将邻居拉拢入伙）
     for(map<KeyFrame*,int>::const_iterator it=keyframeCounter.begin(), itEnd=keyframeCounter.end(); it!=itEnd; it++)
     {
         KeyFrame* pKF = it->first;
 
+        // 如果设定为要删除的，跳过
         if(pKF->isBad())
             continue;
         
@@ -1945,26 +1943,28 @@ void Tracking::UpdateLocalKeyFrames()
             pKFmax=pKF;
         }
 
+        // 添加到局部关键帧的列表里
         mvpLocalKeyFrames.push_back(it->first);
         
-        // mnTrackReferenceForFrame防止重复添加局部关键帧
-        //? 这里我可以理解成为,某个关键帧已经被设置为当前帧的 局部关键帧了吗?
+        // 用该关键帧的成员变量mnTrackReferenceForFrame 记录当前帧的id
+        // 表示它已经是当前帧的局部关键帧了，可以防止重复添加局部关键帧
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
     }
 
 
     // Include also some not-already-included keyframes that are neighbors to already-included keyframes
     // V-D K2: neighbors to K1 in the covisibility graph
-    // 策略2：与策略1得到的局部关键帧共视程度很高的关键帧作为局部关键帧
+    // Step 2.2 策略2：遍历策略1得到的局部关键帧里共视程度很高的关键帧，将他们的家人和邻居作为局部关键帧
     for(vector<KeyFrame*>::const_iterator itKF=mvpLocalKeyFrames.begin(), itEndKF=mvpLocalKeyFrames.end(); itKF!=itEndKF; itKF++)
     {
         // Limit the number of keyframes
+        // 局部关键帧不超过80帧
         if(mvpLocalKeyFrames.size()>80)
             break;
 
         KeyFrame* pKF = *itKF;
 
-        // 策略2.1:最佳共视的10帧; 如果共视帧不足10帧,那么就返回所有具有共视关系的关键帧
+        // 策略2.1:最佳共视的10帧; 如果共视帧不足10帧,那么就返回所有具有共视关系的关键帧（将邻居的邻居拉拢入伙）
         const vector<KeyFrame*> vNeighs = pKF->GetBestCovisibilityKeyFrames(10);
         for(vector<KeyFrame*>::const_iterator itNeighKF=vNeighs.begin(), itEndNeighKF=vNeighs.end(); itNeighKF!=itEndNeighKF; itNeighKF++)
         {
@@ -1981,7 +1981,7 @@ void Tracking::UpdateLocalKeyFrames()
             }
         }
 
-        // 策略2.2:自己的子关键帧
+        // 策略2.2:将自己的子关键帧作为局部关键帧（将邻居的子孙们拉拢入伙）
         const set<KeyFrame*> spChilds = pKF->GetChilds();
         for(set<KeyFrame*>::const_iterator sit=spChilds.begin(), send=spChilds.end(); sit!=send; sit++)
         {
@@ -1997,7 +1997,7 @@ void Tracking::UpdateLocalKeyFrames()
             }
         }
 
-        // 策略2.3:自己的父关键帧
+        // 策略2.3:自己的父关键帧（将邻居的父母们拉拢入伙）
         KeyFrame* pParent = pKF->GetParent();
         if(pParent)
         {
@@ -2013,10 +2013,7 @@ void Tracking::UpdateLocalKeyFrames()
     }
 
     // V-D Kref： shares the most map points with current frame
-    // step 3：更新当前帧的参考关键帧，与自己共视程度最高的关键帧作为参考关键帧
-    // 我觉得设立参考关键帧的一个目的就是，后面的各种优化过程中只会优化关键帧的位姿，那普通帧的位姿就放弃？nonono，但是更新吧我们的
-    // 计算量又承担不过来，so就设立一个参考关键帧，我管你参考关键帧有没有进行优化，只要我（普通帧）保证能够和你参考关键帧的相对位姿
-    // 不变就阔以了
+    // Step 3：更新当前帧的参考关键帧，与自己共视程度最高的关键帧作为参考关键帧
     if(pKFmax)
     {
         mpReferenceKF = pKFmax;
