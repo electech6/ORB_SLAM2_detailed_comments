@@ -235,7 +235,6 @@ vector<KeyFrame*> KeyFrame::GetBestCovisibilityKeyFrames(const int &N)
         // 如果不够达到的数目就直接吧现在所有的关键帧都返回了
         return mvpOrderedConnectedKeyFrames;
     else
-        // 迭代器牛逼啊
         return vector<KeyFrame*>(mvpOrderedConnectedKeyFrames.begin(),mvpOrderedConnectedKeyFrames.begin()+N);
 }
 

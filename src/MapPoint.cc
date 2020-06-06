@@ -129,7 +129,8 @@ cv::Mat MapPoint::GetWorldPos()
     unique_lock<mutex> lock(mMutexPos);
     return mWorldPos.clone();
 }
-//设置地图点的平均观测方向
+
+//世界坐标系下相机到3D点的向量 (当前关键帧的观测方向)
 cv::Mat MapPoint::GetNormal()
 {
     unique_lock<mutex> lock(mMutexPos);
@@ -199,7 +200,7 @@ void MapPoint::EraseObservation(KeyFrame* pKF)
         SetBadFlag();
 }
 
-//获取对当前点的观测详情(目测是用于优化? TODO)
+//获取对当前点的观测详情
 map<KeyFrame*, size_t> MapPoint::GetObservations()
 {
     unique_lock<mutex> lock(mMutexFeatures);
@@ -572,6 +573,13 @@ int MapPoint::PredictScale(const float &currentDist, KeyFrame* pKF)
     return nScale;
 }
 
+/**
+ * @brief 根据地图点到光心的距离来预测一个类似特征金字塔的尺度
+ * 
+ * @param[in] currentDist       地图点到光心的距离
+ * @param[in] pF                当前帧
+ * @return int                  尺度
+ */
 int MapPoint::PredictScale(const float &currentDist, Frame* pF)
 {
     float ratio;
@@ -580,6 +588,7 @@ int MapPoint::PredictScale(const float &currentDist, Frame* pF)
         ratio = mfMaxDistance/currentDist;
     }
 
+    // ? 为什么这样计算
     int nScale = ceil(log(ratio)/pF->mfLogScaleFactor);
     if(nScale<0)
         nScale = 0;

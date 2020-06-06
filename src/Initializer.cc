@@ -582,7 +582,6 @@ float Initializer::CheckHomography(
     vector<bool> &vbMatchesInliers,     //匹配好的特征点对的Inliers标记
     float sigma)                        //估计误差
 {
-
     // 说明：在已值n维观测数据误差服从N(0，sigma）的高斯分布时
     // 其误差加权最小二乘结果为  sum_error = SUM(e(i)^T * Q^(-1) * e(i))
     // 其中：e(i) = [e_x,e_y,...]^T, Q维观测数据协方差矩阵，即sigma * sigma组成的协方差矩阵

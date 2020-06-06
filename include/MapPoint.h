@@ -250,6 +250,7 @@ public:
     bool mbTrackInView;
     // TrackLocalMap - UpdateLocalPoints 中防止将MapPoints重复添加至mvpLocalMapPoints的标记
     long unsigned int mnTrackReferenceForFrame;
+
     // TrackLocalMap - SearchLocalPoints 中决定是否进行isInFrustum判断的变量
     // NOTICE mnLastFrameSeen==mCurrentFrame.mnId的点有几种：
     // a 已经和当前帧经过匹配（TrackReferenceKeyFrame，TrackWithMotionModel）但在优化过程中认为是外点
@@ -258,7 +259,8 @@ public:
 
     //REVIEW 下面的....都没看明白
     // Variables used by local mapping
-    long unsigned int mnBALocalForKF;           ///< 在局部建图线程调用优化的时候使用,防止这个地图点被多个关键帧重复索引
+    // local mapping中记录地图点对应当前局部BA的关键帧的mnId。mnBALocalForKF 在map point.h里面也有同名的变量。
+    long unsigned int mnBALocalForKF;          
     long unsigned int mnFuseCandidateForKF;     ///< 在局部建图线程中使用,表示被用来进行地图点融合的关键帧(存储的是这个关键帧的id)
 
     // Variables used by loop closing -- 一般都是为了避免重复操作
@@ -281,11 +283,12 @@ protected:
     cv::Mat mWorldPos; ///< MapPoint在世界坐标系下的坐标
 
     // Keyframes observing the point and associated index in keyframe
-    std::map<KeyFrame*,size_t> mObservations; ///< 观测到该MapPoint的KF和该MapPoint在KF中的索引
+    // 观测到该MapPoint的KF和该MapPoint在KF中的索引
+    std::map<KeyFrame*,size_t> mObservations; 
 
     // Mean viewing direction
     // 该MapPoint平均观测方向
-    //? 为什么要做这个呢? ORBmatcher.cc中用到此向量，确定搜索区域
+    // 用于判断点是否在可视范围内
     cv::Mat mNormalVector;
 
     // Best descriptor to fast matching

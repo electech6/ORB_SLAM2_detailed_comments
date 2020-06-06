@@ -315,13 +315,14 @@ public:
     const float mfGridElementHeightInv;
 
     // Variables used by the tracking
-    long unsigned int mnTrackReferenceForFrame; 
+    long unsigned int mnTrackReferenceForFrame;     // 记录它
     long unsigned int mnFuseTargetForKF;        ///< 标记在局部建图线程中,和哪个关键帧进行融合的操作
 
     // Variables used by the local mapping
+    // local mapping中记录当前处理的关键帧的mnId，表示当前局部BA的关键帧id。mnBALocalForKF 在map point.h里面也有同名的变量。
     long unsigned int mnBALocalForKF;
-    long unsigned int mnBAFixedForKF;           ///< 在局部建图线程调用局部优化的时候使用,表示当前关键帧能够观测到某个地图点电视却不属于局部关键帧,so这个关键帧
-                                                ///< 只是提供约束信息但是却不会去优化这个关键帧;为了避免重复添加,这里要记录触发优化的关键帧的id
+    // local mapping中记录当前处理的关键帧的mnId, 只是提供约束信息但是却不会去优化这个关键帧
+    long unsigned int mnBAFixedForKF;           
 
     // Variables used by the keyframe database 下面的这些变量都是临时的,由外部调用暂时存放一些数据
     /// 标记了当前关键帧是id为mnLoopQuery的回环检测的候选关键帧

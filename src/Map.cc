@@ -100,7 +100,7 @@ void Map::EraseKeyFrame(KeyFrame *pKF)
  * @brief 设置参考MapPoints，将用于DrawMapPoints函数画图
  * @param vpMPs Local MapPoints
  */
-//NOTE 其实可以看出,这里的参考地图点实际在地图中是一个相对独立的部分
+// 设置参考地图点用于绘图显示局部地图点（红色）
 void Map::SetReferenceMapPoints(const vector<MapPoint *> &vpMPs)
 {
     unique_lock<mutex> lock(mMutexMap);
