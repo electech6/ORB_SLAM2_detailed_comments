@@ -33,27 +33,28 @@
 #ifndef VIEWER_H
 #define VIEWER_H
 
-#include "FrameDrawer.h"
-#include "MapDrawer.h"
-#include "Tracking.h"
-#include "System.h"
+#include "FrameDrawer.h"        // 帧绘制器, 利用 OpenCV 的 GUI 实现, 其实就是显示图像
+#include "MapDrawer.h"          // 地图绘制器, 利用 Pangolin 和 OpenGL 的 API 实现
+#include "Tracking.h"           // 追踪线程
+#include "System.h"             // 系统整体定义
 
-#include <mutex>
+#include <mutex>                // C++ STL 线程锁支持
 
 namespace ORB_SLAM2
 {
 
+// 前视声明
 class Tracking;
 class FrameDrawer;
 class MapDrawer;
 class System;
 
+/** @brief 用于创建窗口, 进行用户交互和显示内容的管理 */
 class Viewer
 {
 public:
     /**
      * @brief 构造函数
-     * 
      * @param[in] pSystem           系统实例
      * @param[in] pFrameDrawer      帧绘制器
      * @param[in] pMapDrawer        地图绘制器
@@ -78,64 +79,51 @@ public:
     bool isFinished();
     /** @brief 判断当前进程是否已经停止 */
     bool isStopped();
-    /** @brief 释放变量，避免互斥关系 */
+    /** @brief 表示当前 Viewer 已经停止 */
+    // TODO
     void Release();
 
 private:
 
     /**
      * @brief 停止当前查看器的更新
-     * 
      * @return true     成功停止
      * @return false    失败,一般是因为查看器进程已经销毁或者是正在销毁
      */
     bool Stop();
 
-    ///系统对象指针
-    System* mpSystem;
-    ///帧绘制器
-    FrameDrawer* mpFrameDrawer;
-    ///地图绘制器
-    MapDrawer* mpMapDrawer;
-    ///追踪线程句柄
-    Tracking* mpTracker;
+    System*         mpSystem;           ///< 系统管理对象句柄
+    FrameDrawer*    mpFrameDrawer;      ///< 帧绘制器句柄
+    MapDrawer*      mpMapDrawer;        ///< 地图绘制器句柄
+    Tracking*       mpTracker;          ///< 追踪线程句柄
 
     // 1/fps in ms
-    ///每一帧图像持续的时间
-    double mT;
-    ///图像的尺寸
-    float mImageWidth, mImageHeight;
-    ///显示窗口的的查看视角,最后一个是相机的焦距
-    float mViewpointX, mViewpointY, mViewpointZ, mViewpointF;
+    double          mT;                 /// ? 每一帧图像持续的时间
+    float           mImageWidth;        ///< 显示图像的宽度
+    float           mImageHeight;       ///< 显示图像的高度
+
+    float           mViewpointX;        ///< 三维视图中相机的查看点坐标X
+    float           mViewpointY;        ///< 三维视图中相机的查看点坐标Y
+    float           mViewpointZ;        ///< 三维视图中相机的查看点坐标Z
+    float           mViewpointF;        ///< 三维视图中相机的焦距
 
     /**
      * @brief 检查当前查看器进程是否已经终止
-     * 
      * @return true 
      * @return false 
      */
     bool CheckFinish();
-    /**
-     * @brief 设置当前线程终止
-     * 
-     */
+
+    /** @brief 设置当前线程终止 */
     void SetFinish();
 
-    ///请求结束当前线程的标志
-    bool mbFinishRequested;
-    //当前线程是否已经终止
-    bool mbFinished;
-    ///线程锁对象,用于锁住和finsh,终止当前查看器进程相关的变量
-    //? 但是我现在还是不明白,它是怎么知道我的这个线程锁对象和我的这个线程产生绑定关系的
-    std::mutex mMutexFinish;
-
-    ///当前进程是否停止
-    bool mbStopped;
-    ///是否头停止请求
-    bool mbStopRequested;
-    ///用于锁住stop,停止更新变量相关的互斥量
-    std::mutex mMutexStop;
-
+    bool mbFinishRequested;             ///< 请求结束当前线程的标志
+    bool mbFinished;                    ///< 当前线程是否已经终止
+    std::mutex mMutexFinish;            ///< 线程锁对象,用于锁住和finsh,终止当前查看器进程相关的变量
+    
+    bool mbStopped;                     ///< 当前进程是否停止绘图循环(注意不是退出)
+    bool mbStopRequested;               ///< 是否请求终止绘制循环的变量, 由外部循环控制
+    std::mutex mMutexStop;              ///< 控制上述变量的线程锁
 };
 
 }
