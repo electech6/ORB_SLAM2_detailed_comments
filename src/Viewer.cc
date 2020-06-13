@@ -45,13 +45,13 @@ Viewer::Viewer(System* pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
 
     float fps = fSettings["Camera.fps"];
-    if(fps<1)
+    if(fps < 1)
         fps=30;
     //计算出每一帧所持续的时间
-    mT = 1e3/fps;
+    mT = 1e3 / fps;
 
     //从配置文件中获取图像的长宽参数
-    mImageWidth  = fSettings["Camera.width"];
+    mImageWidth  = fSettings["Camera.width" ];
     mImageHeight = fSettings["Camera.height"];
     if(mImageWidth < 1 || mImageHeight < 1)
     {   

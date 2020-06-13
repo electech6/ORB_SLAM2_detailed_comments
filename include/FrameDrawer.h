@@ -33,19 +33,22 @@
 #ifndef FRAMEDRAWER_H
 #define FRAMEDRAWER_H
 
+// 类型支持
 #include "Tracking.h"
 #include "MapPoint.h"
 #include "Map.h"
 
-#include<opencv2/core/core.hpp>
-#include<opencv2/features2d/features2d.hpp>
+// OpenCV
+#include <opencv2/core/core.hpp>
+#include <opencv2/features2d/features2d.hpp>
 
-#include<mutex>
-
+// 线程锁
+#include <mutex>
 
 namespace ORB_SLAM2
 {
 
+// 前视声明
 class Tracking;
 class Viewer;
 
@@ -54,24 +57,20 @@ class FrameDrawer
 public:
     /**
      * @brief 构造函数
-     * 
-     * @param[in] pMap  地图指针
+     * @param[in] pMap  地图对象句柄
      */
     FrameDrawer(Map* pMap);
 
     // Update info from the last processed frame.
     /**
-     * @brief 将跟踪线程的数据拷贝到绘图线程（图像、特征点、地图、跟踪状态）
-     * 
+     * @brief 将跟踪线程的数据拷贝到绘图线程（图像、特征点、地图、跟踪状态）, 由其他线程调用
      * @param[in] pTracker 追踪线程
      */
     void Update(Tracking *pTracker);
 
     // Draw last processed frame.
-    //
     /**
      * @brief 绘制最近处理过的帧,这个将会在可视化查看器的窗口中被创建
-     * 
      * @return cv::Mat 返回绘制完成的图像,可以直接进行显示
      */
     cv::Mat DrawFrame();
@@ -80,39 +79,29 @@ protected:
 
     /**
      * @brief 绘制底部的信息栏
-     * 
      * @param[in]  im           原始图像
-     * @param[in]  nState       当前系统的工作状态
+     * @param[in]  nState       当前系统的工作状态(初始化? 跟踪正常? 跟踪丢失?)
      * @param[out] imText       叠加后的图像
      */
     void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
 
-    // Info of the frame to be drawn
-    ///当前绘制的图像
-    cv::Mat mIm;
-    ///当前帧中特征点的数目
-    int N;
-    ///当前帧中的特征点
-    vector<cv::KeyPoint> mvCurrentKeys;
-    ///当前帧中的特征点是否在地图中的标记
-    ///当前帧的特征点在地图中是否出现;后者是表示地图中没有出现,但是在当前帧中是第一次被观测得到的点
-    vector<bool> mvbMap, mvbVO;
-    ///当前是否是只有追踪线程在工作;或者说,当前是处于定位模式还是处于SLAM模式
-    bool mbOnlyTracking;
-    ///当前帧中追踪到的特征点计数
-    int mnTracked, mnTrackedVO;
-    ///参考帧中的特征点
-    vector<cv::KeyPoint> mvIniKeys;
-    ///当前帧特征点和参考帧特征点的匹配关系
-    vector<int> mvIniMatches;
-    ///当前SLAM系统的工作状态
-    int mState;
+    // Info of the frame to be drawn -- 说白了就是缓存的等待绘制的各种数据
+    cv::Mat                     mIm;            ///< 当前输入的图像(灰度化之后)
+    int                         N;              ///< 当前帧中特征点的数目
+    vector<cv::KeyPoint>        mvCurrentKeys;  ///< 当前帧中的特征点
+    vector<bool>                mvbMap;         ///< 当前帧中成功跟踪的特征点存在对应的地图点的点, 在SLAM过程中所有的点都满足
+    vector<bool>                mvbVO;          ///< 当前帧中成功跟踪的特征点没有对应的地图点, 说明是在纯定位模式下新匹配成功的特征点
+    bool                        mbOnlyTracking; ///< 当前处于定位模式还是处于SLAM模式
+    
+    int                         mnTracked;      ///< Map 类点追踪的个数
+    int                         mnTrackedVO;    ///< VO  类点追踪的个数
+    vector<cv::KeyPoint>        mvIniKeys;      ///< 初始化过程中参考帧提取得到的特征点, 仅用于初始化过程
+    vector<int>                 mvIniMatches;   ///< 初始化过程中当前帧和参考帧特征点的匹配关系, 仅用于初始化过程
+    int                         mState;         ///< 当前SLAM系统的工作状态
 
-    ///地图指针
-    Map* mpMap;
+    Map*                        mpMap;          ///< 地图对象句柄
 
-    //线程锁
-    std::mutex mMutex;
+    std::mutex                  mMutex;         ///< 线程锁, 主要解决 Tracking 线程和 Viewer 线程同时访问的问题
 };
 
 } //namespace ORB_SLAM
