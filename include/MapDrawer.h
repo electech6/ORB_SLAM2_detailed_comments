@@ -3,7 +3,7 @@
  * @author guoqing (1337841346@qq.com)
  * @brief 绘制地图点
  * @version 0.1
- * @date 2019-02-19
+ * @date 2019-02-19 update 2020-06-20
  * 
  * @copyright Copyright (c) 2019
  * 
@@ -32,11 +32,13 @@
 #ifndef MAPDRAWER_H
 #define MAPDRAWER_H
 
-#include"Map.h"
-#include"MapPoint.h"
-#include"KeyFrame.h"
-#include<pangolin/pangolin.h>
-
+// 包含必要头文件
+#include "Map.h"
+#include "MapPoint.h"
+#include "KeyFrame.h"
+// Pangolin 支持
+#include <pangolin/pangolin.h>
+、、 线程锁支持
 #include<mutex>
 
 namespace ORB_SLAM2
@@ -47,70 +49,60 @@ class MapDrawer
 public:
     /**
      * @brief 构造函数
-     * 
      * @param[in] pMap              地图句柄
      * @param[in] strSettingPath    配置文件的路径
      */
     MapDrawer(Map* pMap, const string &strSettingPath);
     
-    //地图句柄
+    //地图对象句柄
     Map* mpMap;
 
     /** @brief 绘制地图点 */
     void DrawMapPoints();
+
     /**
      * @brief 绘制关键帧
-     * 
      * @param[in] bDrawKF       是否绘制关键帧
      * @param[in] bDrawGraph    是否绘制共视图
      */
     void DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph);
+
     /**
      * @brief 绘制当前相机
-     * 
      * @param[in] Twc 相机的位姿矩阵
      */
     void DrawCurrentCamera(pangolin::OpenGlMatrix &Twc);
+
     /**
      * @brief 设置当前帧的相机位姿
-     * 
      * @param[in] Tcw 位姿矩阵
      */
     void SetCurrentCameraPose(const cv::Mat &Tcw);
+
     /**
-     * @brief 设置参考关键帧
-     * 
+     * @brief 设置参考关键帧 -- // ? 感觉这个在可视化过程中体现不出来呢? 
      * @param[in] pKF 参考关键帧的句柄
      */
     void SetReferenceKeyFrame(KeyFrame *pKF);
+
     /**
-     * @brief 将相机位姿mCameraPose由Mat类型转化为OpenGlMatrix类型
-     * 
-     * @param[out] M 
+     * @brief 将当前设置的相机位姿 mCameraPose 由 cv::Mat 类型转化为 pangolin::OpenGlMatrix 类型
+     * @param[out] M 相机位姿矩阵
      */
     void GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M);
 
 private:
 
     //绘制这些部件的参数
-    ///关键帧-大小
-    float mKeyFrameSize;
-    ///关键帧-线宽
-    float mKeyFrameLineWidth;
-    ///共视图的线宽
-    float mGraphLineWidth;
-    ///地图点的大小
-    float mPointSize;
-    ///绘制的相机的大小
-    float mCameraSize;
-    ///绘制相机的线宽
-    float mCameraLineWidth;
+    float mKeyFrameSize;                    ///< 绘制的关键帧图元大小
+    float mKeyFrameLineWidth;               ///< 绘制的关键帧图元线宽
+    float mGraphLineWidth;                  ///< 绘制的共视图边的线宽
+    float mPointSize;                       ///< 绘制的地图点图元大小
+    float mCameraSize;                      ///< 绘制的当前帧图元大小(实际上用的就是关键帧的图元)
+    float mCameraLineWidth;                 ///< 绘制的当前帧图元线宽
 
-    ///相机位置
-    cv::Mat mCameraPose;
-
-    ///线程互斥量
-    std::mutex mMutexCamera;
+    cv::Mat mCameraPose;                    ///< 当前帧相机所在的位姿
+    std::mutex mMutexCamera;                ///< 用于避免冲突的线程互斥锁
 };
 
 } //namespace ORB_SLAM
