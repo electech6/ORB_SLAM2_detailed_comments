@@ -1534,7 +1534,7 @@ bool Tracking::NeedNewKeyFrame()
     // Step 6：对于双目或RGBD摄像头，统计可以添加的有效地图点总数 和 跟踪到的地图点数量
      int nNonTrackedClose = 0;  //双目，RGB-D中没有跟踪到的或者比较远的三维点
     int nTrackedClose= 0;       //双目，RGB-D中跟踪到的比较近的三维点
-    if(mSensor!=slamSystem::MONOCULAR)
+    if(mSensor!=System::MONOCULAR)
     {
         for(int i =0; i<mCurrentFrame.N; i++)
         {
