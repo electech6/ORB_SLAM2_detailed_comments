@@ -918,7 +918,7 @@ void Frame::ComputeStereoMatches()
     // vRowIndices[0] = [1，2，5，8, 11]   第1行有5个特征点,他们的列号（即x坐标）分别是1,2,5,8,11
     // vRowIndices[1] = [2，6，7，9, 13, 17, 20]  第2行有7个特征点.etc
     vector<vector<size_t> > vRowIndices(nRows, vector<size_t>());
-    for(int i=0; i<nRows; i++） vRowIndices[i].reserve(200);
+    for(int i=0; i<nRows; i++) vRowIndices[i].reserve(200);
 
 	// 右图特征点数量，N表示数量 r表示右图，且不能被修改
     const int Nr = mvKeysRight.size();
@@ -1006,6 +1006,7 @@ void Frame::ComputeStereoMatches()
                 }
             }
         }
+    
         
         // 如果刚才匹配过程中的最佳描述子距离小于给定的阈值
         // Step 3. 精确匹配. 
@@ -1120,7 +1121,7 @@ void Frame::ComputeStereoMatches()
                 vDistIdx.push_back(pair<int,int>(bestDist,iL));
         }   
     }
-
+    }
     // Step 6. 删除离缺点(outliers)
     // 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是匹配的，比如光照变化、弱纹理、无纹理等同样会造成误匹配
     // 误匹配判断条件  norm_sad > 1.5 * 1.4 * median
