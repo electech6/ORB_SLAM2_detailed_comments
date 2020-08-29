@@ -180,9 +180,9 @@ static void computeOrbDescriptor(const KeyPoint& kpt,
 	//具体地，在计算的时候需要将这里选取的随机点点集的x轴方向旋转到特征点的方向。
 	//获得随机“相对点集”中某个idx所对应的点的灰度,这里旋转前坐标为(x,y), 旋转后坐标(x',y')推导:
     // x'= xcos(θ) - ysin(θ),  y'= xsin(θ) + ycos(θ)
-    #define GET_VALUE(idx) \
-        center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + \        // y'* step
-               cvRound(pattern[idx].x*a - pattern[idx].y*b)]                // x'
+    #define GET_VALUE(idx) center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + cvRound(pattern[idx].x*a - pattern[idx].y*b)]        
+    // y'* step
+    // x'
 
 	//brief描述子由32*8位组成
 	//其中每一位是来自于两个像素点灰度的直接比较，所以每比较出8bit结果，需要16个随机点，这也就是为什么pattern需要+=16的原因

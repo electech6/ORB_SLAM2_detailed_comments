@@ -27,6 +27,7 @@
 #include <thread>					//多线程
 #include <pangolin/pangolin.h>		//可视化界面
 #include <iomanip>					//主要是对cin,cout之类的一些操纵运算子
+#include <unistd.h>
 
 namespace ORB_SLAM2
 {
