@@ -444,95 +444,34 @@ void Frame::ExtractORB(int flag, const cv::Mat &im)
         (*mpORBextractorRight)(im,cv::Mat(),mvKeysRight,mDescriptorsRight);
 }
 
-// 设置相机姿态，随后会调用 UpdatePoseMatrices() 来改变mRcw,mRwc等变量的值
+// 设置相机姿态
 void Frame::SetPose(cv::Mat Tcw)
 {
-	/** 1. 更改类的成员变量,深拷贝 */
     mTcw = Tcw.clone();
-	/** 2. 调用 Frame::UpdatePoseMatrices() 来更新、计算类的成员变量中所有的位姿矩阵 */
     UpdatePoseMatrices();
 }
 
 //根据Tcw计算mRcw、mtcw和mRwc、mOw
 void Frame::UpdatePoseMatrices()
 {
-    // mOw：当前相机光心在世界坐标系下坐标
-    /** 主要计算四个量. 定义程序中的符号和公式表达: \n
-     * Frame::mTcw = \f$ \mathbf{T}_{cw} \f$ \n
-     * Frame::mRcw = \f$ \mathbf{R}_{cw} \f$ \n
-     * Frame::mRwc = \f$ \mathbf{R}_{wc} \f$ \n
-     * Frame::mtcw = \f$ \mathbf{t}_{cw} \f$ 即相机坐标系下相机坐标系到世界坐标系间的向量, 向量方向由相机坐标系指向世界坐标系\n
-     * Frame::mOw  = \f$ \mathbf{O}_{w} \f$  即世界坐标系下世界坐标系到相机坐标系间的向量, 向量方向由世界坐标系指向相机坐标系\n  
-     * 步骤: */
-    /** 1. 计算mRcw,即相机从世界坐标系到当前帧的相机位置的旋转. \n
-     * 这里是直接从 Frame::mTcw 中提取出旋转矩阵. \n*/
-    // [x_camera 1] = [R|t]*[x_world 1]，坐标为齐次形式
-    // x_camera = R*x_world + t
-	//注意，rowRange这个只取到范围的左边界，而不取右边界
-	//所以下面这个其实就是从变换矩阵中提取出旋转矩阵
+    // mOw：    当前相机光心在世界坐标系下坐标
+    // mTcw：   世界坐标系到相机坐标系的变换矩阵
+    // mRcw：   世界坐标系到相机坐标系的旋转矩阵
+    // mtcw：   世界坐标系到相机坐标系的平移向量
+    // mRwc：   相机坐标系到世界坐标系的旋转矩阵
+
+	//从变换矩阵中提取出旋转矩阵
+    //注意，rowRange这个只取到范围的左边界，而不取右边界
     mRcw = mTcw.rowRange(0,3).colRange(0,3);
-    /** 2. 相反的旋转就是取个逆，对于正交阵也就是取个转置: \n
-     * \f$ \mathbf{R}_{wc}=\mathbf{R}_{cw}^{-1}=\mathbf{R}_{cw}^{\text{T}} \f$ \n
-     * 得到 mRwc .
-     */
+
+    // mRcw求逆即可
     mRwc = mRcw.t();
-	/** 3. 同样地，从变换矩阵 \f$ \mathbf{T}_{cw} \f$中提取出平移向量 \f$ \mathbf{t}_{cw} \f$ \n 
-     * 进而得到 mtcw. 
-     */
+
+    // 从变换矩阵中提取出旋转矩阵
     mtcw = mTcw.rowRange(0,3).col(3);
-    // mtcw, 即相机坐标系下相机坐标系到世界坐标系间的向量, 向量方向由相机坐标系指向世界坐标系
-    // mOw, 即世界坐标系下世界坐标系到相机坐标系间的向量, 向量方向由世界坐标系指向相机坐标系
 
-    //可能又错误,不要看接下来的这一段!!!
-	//其实上面这两个平移向量应当描述的是两个坐标系原点之间的相互位置，mOw也就是相机的中心位置吧（在世界坐标系下）
-	//上面的两个量互为相反的关系,但是由于mtcw这个向量是在相机坐标系下来说的，所以要反旋转变换到世界坐标系下，才能够表示mOw
-
-    /** 4. 最终求得相机光心在世界坐标系下的坐标: \n
-     * \f$ \mathbf{O}_w=-\mathbf{R}_{cw}^{\text{T}}\mathbf{t}_{cw} \f$ \n
-     * 使用这个公式的原因可以按照下面的思路思考. 假设我们有了一个点 \f$ \mathbf{P} \f$ ,有它在世界坐标系下的坐标 \f$ \mathbf{P}_w \f$ 
-     * 和在当前帧相机坐标系下的坐标 \f$ \mathbf{P}_c \f$ ,那么比较容易有: \n
-     * \f$ \mathbf{P}_c=\mathbf{R}_{cw}\mathbf{P}_w+\mathbf{t}_{cw}  \f$ \n
-     * 移项: \n
-     * \f$ \mathbf{P}_c-\mathbf{t}_{cw}=\mathbf{R}_{cw}\mathbf{P}_w \f$ \n
-     * 移项,考虑到旋转矩阵为正交矩阵,其逆等于其转置: \n
-     * \f$ \mathbf{R}_{cw}^{-1}\left(\mathbf{P}_c-\mathbf{t}_{cw}\right)=
-     * \mathbf{R}_{cw}^{\text{T}}\left(\mathbf{P}_c-\mathbf{t}_{cw}\right) = 
-     * \mathbf{P}_w \f$ \n
-     * 此时,如果点\f$ \mathbf{P} \f$就是表示相机光心的话,那么这里的\f$ \mathbf{P}_w \f$也就是相当于 \f$ \mathbf{O}_w \f$ 了,
-     * 并且形象地可以知道 \f$ \mathbf{P}_c=0 \f$. 所以上面的式子就变成了: \n
-     * \f$ \mathbf{O}_w=\mathbf{P}_w=\left(-\mathbf{t}_{cw}\right) \f$ \n
-     * 于是就有了程序中的计算的公式. \n
-     * 也许你会想说为什么不是 \f$ \mathbf{O}_w=-\mathbf{t}_{cw} \f$,是因为如果这样做的话没有考虑到坐标系之间的旋转.
-     */ 
-	
+    // mTcw 求逆后是当前相机坐标系变换到世界坐标系下，对应的光心变换到世界坐标系下就是 mTcw的逆 中对应的平移向量
     mOw = -mRcw.t()*mtcw;
-
-	/* 下面都是之前的推导,可能有错误,不要看!!!!!
-	其实上面的算式可以写成下面的形式：
-	mOw=(Rcw')*(-tcw)*[0,0,0]'  (MATLAB写法)（但是这里的计算步骤貌似是不对的）
-	这里的下标有些意思，如果倒着读，就是“坐标系下点的坐标变化”，如果正着读，就是“坐标系本身的变化”，正好两者互逆
-	所以这里就有：
-	tcw:相机坐标系到世界坐标系的平移向量
-	-tcw:世界坐标系到相机坐标系的平移向量
-	Rcw：相机坐标系到世界坐标系所发生的旋转
-	Rcw^t=Rcw^-1:世界坐标系到相机坐标系所发生的旋转
-	最后一个因子则是世界坐标系的原点坐标
-	不过这样一来，如果是先旋转后平移的话，上面的计算公式就是这个了：
-	mOw=(Rcw')*[0,0,0]'+(-tcw)
-	唉也确实是，对于一个原点无论发生什么样的旋转，其坐标还是不变啊。有点懵逼。
-	会不会是这样：在讨论坐标系变换问题的时候，我们处理的是先平移，再旋转？如果是这样的话：
-	mOw=(Rcw')*([0,0,0]'+(-tcw))=(Rcw')*(-tcw)
-	就讲得通了
-	新问题：这里的mOw和-tcw又是什么关系呢?目前来看好似是前者考虑了旋转而后者没有（后来的想法证明确实是这样的）
-	另外还有一种理解方法：
-	Pc=Rcw*Pw+tcw
-	Pc-tcw=Rcw*Pw
-	Rcw'(Pc-tcw)=Pw		然后前面是对点在不同坐标系下的坐标变换，当计算坐标系本身的变化的时候反过来，
-	(这一行的理解不正确)将Pc认为是世界坐标系原点坐标，Pw认为是相机的光心坐标
-    应该这样说,当P点就是相机光心的时候,Pw其实就是这里要求的mOw,Pc明显=0
-	Rcw'(o-tcw)=c
-	c=Rcw'*(-tcw)			就有了那个式子
-	**/
 }
 
 /**
@@ -542,7 +481,7 @@ void Frame::UpdatePoseMatrices()
  * Step 2 关卡一：检查这个地图点在当前帧的相机坐标系下，是否有正的深度.如果是负的，表示出错，返回false
  * Step 3 关卡二：将MapPoint投影到当前帧的像素坐标(u,v), 并判断是否在图像有效范围内
  * Step 4 关卡三：计算MapPoint到相机中心的距离, 并判断是否在尺度变化的距离内
- * Step 5 关卡四：计算当前视角和“法线”夹角的余弦值, 若小于设定阈值，返回false
+ * Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值, 若小于设定阈值，返回false
  * Step 6 根据地图点到光心的距离来预测一个尺度（仿照特征点金字塔层级）
  * Step 7 记录计算得到的一些参数
  * @param[in] pMP                       当前地图点
@@ -590,7 +529,7 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     const float maxDistance = pMP->GetMaxDistanceInvariance();
     const float minDistance = pMP->GetMinDistanceInvariance();
 
-    // 得到当前3D地图点距离当前帧相机光心的距离,注意P，mOw都是在同一坐标系下才可以
+    // 得到当前地图点距离当前帧相机光心的距离,注意P，mOw都是在同一坐标系下才可以
     //  mOw：当前相机光心在世界坐标系下坐标
     const cv::Mat PO = P-mOw;
 	//取模就得到了距离
@@ -601,11 +540,10 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
         return false;
 
     // Check viewing angle
-    // Step 5 关卡四：计算当前视角和“法线”夹角的余弦值, 若小于cos(viewingCosLimit), 即夹角大于viewingCosLimit弧度则返回
-    // ?“法线”指当前关键帧的观测方向：世界坐标系下相机到3D点的向量 (当前关键帧的观测方向)，是不是和 dist 重复？
+    // Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值, 若小于cos(viewingCosLimit), 即夹角大于viewingCosLimit弧度则返回
     cv::Mat Pn = pMP->GetNormal();
 
-	// 计算当前视角和法线夹角的余弦值，注意法线为单位向量
+	// 计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值，注意平均观测方向为单位向量
     const float viewCos = PO.dot(Pn)/dist;
 
 	//如果大于给定的阈值 cos(60°)=0.5，认为这个点方向太偏了，重投影不可靠，返回false
@@ -759,11 +697,14 @@ bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY)
     return true;
 }
 
-//计算词包 mBowVec 和 mFeatVec
+/**
+ * @brief 计算当前帧特征点对应的词袋Bow，主要是mBowVec 和 mFeatVec
+ * 
+ */
 void Frame::ComputeBoW()
 {
 	
-    /** 这个函数只有在当前帧的词袋是空的时候才回进行操作。步骤如下:<ul> */
+    // 判断是否以前已经计算过了，计算过了就跳过
     if(mBowVec.empty())
     {
 		// 将描述子mDescriptors转换为DBOW要求的输入格式
@@ -774,7 +715,6 @@ void Frame::ComputeBoW()
 								   mFeatVec,		//输出，记录node id及其对应的图像 feature对应的索引
 								   4);				//4表示从叶节点向前数的层数
     }
-    /** </ul> */
 }
 
 /**

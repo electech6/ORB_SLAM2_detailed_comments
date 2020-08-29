@@ -1,15 +1,4 @@
 /**
- * @file Map.h
- * @author guoqing (1337841346@qq.com)
- * @brief 地图
- * @version 0.1
- * @date 2019-02-26
- * 
- * @copyright Copyright (c) 2019
- * 
- */
-
-/**
 * This file is part of ORB-SLAM2.
 *
 * Copyright (C) 2014-2016 Raúl Mur-Artal <raulmur at unizar dot es> (University of Zaragoza)
@@ -143,7 +132,7 @@ public:
     /** @brief 清空地图 */
     void clear();
 
-    // 虽然是一个向量，但是实际上值保存了最初始的关键帧
+    // 保存了最初始的关键帧
     vector<KeyFrame*> mvpKeyFrameOrigins;
 
     ///当更新地图时的互斥量.回环检测中和局部BA后更新全局地图的时候会用到这个
@@ -155,9 +144,11 @@ public:
     std::mutex mMutexPointCreation;
 
 protected:
-    
-    std::set<MapPoint*> mspMapPoints; ///< MapPoints
-    std::set<KeyFrame*> mspKeyFrames; ///< Keyframs
+    // 存储所有的地图点
+    std::set<MapPoint*> mspMapPoints; 
+
+    // 存储所有的关键帧
+    std::set<KeyFrame*> mspKeyFrames; 
 
     ///参考地图点
     std::vector<MapPoint*> mvpReferenceMapPoints;
@@ -165,8 +156,7 @@ protected:
     ///当前地图中具有最大ID的关键帧
     long unsigned int mnMaxKFid;
 
-    //NOTICE 这个在泡泡机器人注释的版本中也被去除了
-    // 并且貌似在程序中并没有被使用过
+    // 貌似在程序中并没有被使用过
     // Index related to a big change in the map (loop closure, global BA)
     int mnBigChangeIdx;
 

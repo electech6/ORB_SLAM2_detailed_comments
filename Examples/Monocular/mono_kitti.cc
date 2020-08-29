@@ -27,7 +27,10 @@
 
 #include<opencv2/core/core.hpp>
 #include<unistd.h>
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 #include"System.h"
 
 using namespace std;

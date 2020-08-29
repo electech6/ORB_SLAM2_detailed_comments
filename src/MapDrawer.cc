@@ -54,7 +54,6 @@ MapDrawer::MapDrawer(Map* pMap, const string &strSettingPath):mpMap(pMap)
 
 }
 
-//关于gl相关的函数，可直接google, 并加上msdn关键词 - 大佬牛逼!
 void MapDrawer::DrawMapPoints()
 {
     //取出所有的地图点

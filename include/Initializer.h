@@ -159,24 +159,19 @@ private:
     float CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesInliers, float sigma);
 
     /**
-     * @brief 从F恢复R t
-     * @details 度量重构
-     * \n 1. 由Fundamental矩阵结合相机内参K，得到Essential矩阵: \f$ E = k'^T F k \f$
-     * \n 2. SVD分解得到R t
-     * \n 3. 进行cheirality check, 从四个解中找出最合适的解
+     * @brief 从基础矩阵F中求解位姿R，t及三维点
      * 
-     * @param[in] vbMatchesInliers	匹配好的特征点对的Inliers标记
-     * @param[in] F21				从参考帧到当前帧的基础矩阵
-     * @param[in] K					相机的内参数矩阵
-     * @param[out] R21				计算好的相机从参考帧到当前帧的旋转
-     * @param[out] t21				计算好的相机从参考帧到当前帧的平移
-     * @param[out] vP3D				三角化测量之后的特征点的空间坐标
-     * @param[out] vbTriangulated	某个特征点是否被三角化了的标记
-     * @param[in] minParallax		认为三角化测量有效的最小视差角
-     * @param[in] minTriangulated	认为使用三角化测量进行数据判断的最小测量点数量
-     * @return 	bool 是否解析成功
-     * 
-     * @see Multiple View Geometry in Computer Vision - Result 9.19 p259
+     * @param[in] vbMatchesInliers          匹配好的特征点对的Inliers标记
+     * @param[in] F21                       从参考帧到当前帧的基础矩阵
+     * @param[in] K                         相机的内参数矩阵
+     * @param[in & out] R21                 计算好的相机从参考帧到当前帧的旋转
+     * @param[in & out] t21                 计算好的相机从参考帧到当前帧的平移
+     * @param[in & out] vP3D                三角化测量之后的特征点的空间坐标
+     * @param[in & out] vbTriangulated      特征点三角化成功的标志
+     * @param[in] minParallax               认为三角化有效的最小视差角
+     * @param[in] minTriangulated           最小三角化点数量
+     * @return true                         成功初始化
+     * @return false                        初始化失败
      */
     bool ReconstructF(vector<bool> &vbMatchesInliers,
                       cv::Mat &F21, cv::Mat &K,
@@ -188,24 +183,22 @@ private:
                       int minTriangulated);
 
     /**
-     * @brief 从H恢复R t
-     * @details 分解H矩阵，并从分解后的多个解中找出合适的R，t
-     * \n H矩阵分解常见有两种方法：Faugeras SVD-based decomposition 和 Zhang SVD-based decomposition
-     * \n 参考文献：Motion and structure from motion in a piecewise plannar environment
-     * \n 这篇参考文献和下面的代码使用了Faugeras SVD-based decomposition算法
-     * @param[in] vbMatchesInliers	匹配点对的内点标记
-     * @param[in] H21				从参考帧到当前帧的单应矩阵
-     * @param[in] K					相机的内参数矩阵
-     * @param[out] R21				计算出来的相机旋转
-     * @param[out] t21				计算出来的相机平移
-     * @param[out] vP3D				世界坐标系下，三角化测量特征点对之后得到的特征点的空间坐标
-     * @param[out] vbTriangulated	特征点对被三角化测量的标记
-     * @param[in] minParallax		在进行三角化测量时，观测正常所允许的最小视差角
-     * @param[in] minTriangulated	最少被三角化的点对数（其实也是点个数）
-     * @return	bool 数据解算是否成功
-     * @see
-     * - Faugeras et al, Motion and structure from motion in a piecewise planar environment. International Journal of Pattern Recognition and Artificial Intelligence, 1988.
-     * - Deeper understanding of the homography decomposition for vision-based control
+     * @brief 用H矩阵恢复R, t和三维点
+     * H矩阵分解常见有两种方法：Faugeras SVD-based decomposition 和 Zhang SVD-based decomposition
+     * 代码使用了Faugeras SVD-based decomposition算法，参考文献
+     * Motion and structure from motion in a piecewise planar environment. International Journal of Pattern Recognition and Artificial Intelligence, 1988 
+     * 
+     * @param[in] vbMatchesInliers          匹配点对的内点标记
+     * @param[in] H21                       从参考帧到当前帧的单应矩阵
+     * @param[in] K                         相机的内参数矩阵
+     * @param[in & out] R21                 计算出来的相机旋转
+     * @param[in & out] t21                 计算出来的相机平移
+     * @param[in & out] vP3D                世界坐标系下，三角化测量特征点对之后得到的特征点的空间坐标
+     * @param[in & out] vbTriangulated      特征点是否成功三角化的标记
+     * @param[in] minParallax               对特征点的三角化测量中，认为其测量有效时需要满足的最小视差角（如果视差角过小则会引起非常大的观测误差）,单位是角度
+     * @param[in] minTriangulated           为了进行运动恢复，所需要的最少的三角化测量成功的点个数
+     * @return true                         单应矩阵成功计算出位姿和三维点
+     * @return false                        初始化失败
      */
     bool ReconstructH(vector<bool> &vbMatchesInliers,
                       cv::Mat &H21,
@@ -217,15 +210,14 @@ private:
                       float minParallax,
                       int minTriangulated);
 
-    /**
-     * @brief 给定投影矩阵P1,P2和图像上的点kp1,kp2，从而恢复3D坐标
-     * @details 通过三角化方法，利用反投影矩阵将特征点恢复为3D点
-     * @param[in]   kp1 特征点, in reference frame
-     * @param[in]   kp2 特征点, in current frame
-     * @param[in]   P1  投影矩阵P1, 注意这里给的参数是投影矩阵
-     * @param[in]   P2  投影矩阵P2
-     * @param[out]  x3D 三维点
-     * @see       Multiple View Geometry in Computer Vision - 12.2 Linear triangulation methods p312
+    /** 给定投影矩阵P1,P2和图像上的匹配特征点点kp1,kp2，从而计算三维点坐标
+     * @brief 
+     * 
+     * @param[in] kp1               特征点, in reference frame
+     * @param[in] kp2               特征点, in current frame
+     * @param[in] P1                投影矩阵P1
+     * @param[in] P2                投影矩阵P2
+     * @param[in & out] x3D         计算的三维点
      */
     void Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, const cv::Mat &P1, const cv::Mat &P2, cv::Mat &x3D);
 

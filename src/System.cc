@@ -28,7 +28,10 @@
 #include <pangolin/pangolin.h>		//可视化界面
 #include <iomanip>					//主要是对cin,cout之类的一些操纵运算子
 #include <unistd.h>
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 namespace ORB_SLAM2
 {
 

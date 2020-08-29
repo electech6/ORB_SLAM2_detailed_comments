@@ -233,7 +233,8 @@ public:
     const long int mnFirstKFid; ///< 创建该MapPoint的关键帧ID
     //呐,如果是从帧中创建的话,会将普通帧的id存放于这里
     const long int mnFirstFrame; ///< 创建该MapPoint的帧ID（即每一关键帧有一个帧ID）
-    ///被观测到的次数
+
+    // 被观测到的相机数目，单目+1，双目或RGB-D则+2
     int nObs;
 
     // Variables used by the tracking
@@ -292,15 +293,12 @@ protected:
     cv::Mat mNormalVector;
 
     // Best descriptor to fast matching
-    // 每个3D点也有一个descriptor
-    // 如果MapPoint与很多帧图像特征点对应（由keyframe来构造时），那么距离其它描述子的平均距离最小的描述子是最佳描述子
-    //? MapPoint只与一帧的图像特征点对应（由frame来构造时），那么这个特征点的描述子就是该3D点的描述子 --  其实就是初始描述子呗 
-    //? 一个变量不能代表两重含义吧
-    cv::Mat mDescriptor; ///< 通过 ComputeDistinctiveDescriptors() 得到的最优描述子
+    // 每个3D点也有一个描述子，但是这个3D点可以观测多个二维特征点，从中选择一个最有代表性的
+     //通过 ComputeDistinctiveDescriptors() 得到的最有代表性描述子,距离其它描述子的平均距离最小
+    cv::Mat mDescriptor; 
 
     /// Reference KeyFrame
-    //? 什么意思? 就是生成它的关键帧吗? 
-    // 解释：通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
+    // 通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
     KeyFrame* mpRefKF;
 
     /// Tracking counters

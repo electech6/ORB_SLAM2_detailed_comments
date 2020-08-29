@@ -25,7 +25,10 @@
 #include<iomanip>
 #include<chrono>
 #include<unistd.h>
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 #include<opencv2/core/core.hpp>
 
 #include<System.h>

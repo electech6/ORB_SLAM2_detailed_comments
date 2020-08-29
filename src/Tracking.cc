@@ -1501,7 +1501,7 @@ bool Tracking::NeedNewKeyFrame()
         return false;
 
     // If Local Mapping is freezed by a Loop Closure do not insert keyframes
-    // Step 2：如果局部地图被闭环检测使用，则不插入关键帧
+    // Step 2：如果局部地图线程被闭环检测使用，则不插入关键帧
     if(mpLocalMapper->isStopped() || mpLocalMapper->stopRequested())
         return false;
 
@@ -1531,15 +1531,17 @@ bool Tracking::NeedNewKeyFrame()
     bool bLocalMappingIdle = mpLocalMapper->AcceptKeyFrames();
 
     // Check how many "close" points are being tracked and how many could be potentially created.
-    // Step 6：对于双目或RGBD摄像头，统计可以添加的有效地图点总数 和 跟踪到的地图点数量
-     int nNonTrackedClose = 0;  //双目，RGB-D中没有跟踪到的或者比较远的三维点
+    // Step 6：对于双目或RGBD摄像头，统计有效深度值中跟踪到的地图点和未跟踪成功的点的数量
+     int nNonTrackedClose = 0;  //双目，RGB-D中没有跟踪到的三维点
     int nTrackedClose= 0;       //双目，RGB-D中跟踪到的比较近的三维点
     if(mSensor!=System::MONOCULAR)
     {
         for(int i =0; i<mCurrentFrame.N; i++)
         {
+            // 深度值在有效范围内
             if(mCurrentFrame.mvDepth[i]>0 && mCurrentFrame.mvDepth[i]<mThDepth)
             {
+                // 是否有对应地图点
                 if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
                     nTrackedClose++;
                 else
@@ -1574,7 +1576,7 @@ bool Tracking::NeedNewKeyFrame()
     const bool c1b = (mCurrentFrame.mnId>=mnLastKeyFrameId+mMinFrames && bLocalMappingIdle);
 
     // Condition 1c: tracking is weak
-    // Step 7.4：在双目，RGB-D的情况下当前帧跟踪到的点比参考关键帧的1.25倍还少，或者满足bNeedToInsertClose
+    // Step 7.4：在双目，RGB-D的情况下当前帧跟踪到的点比参考关键帧的0.25倍还少，或者满足bNeedToInsertClose
     const bool c1c =  mSensor!=System::MONOCULAR &&             //只考虑在双目，RGB-D的情况
                     (mnMatchesInliers<nRefMatches*0.25 ||       //当前帧和地图点匹配的数目非常少
                       bNeedToInsertClose) ;                     //需要插入
@@ -1611,6 +1613,7 @@ bool Tracking::NeedNewKeyFrame()
             else
                 //对于单目情况,就直接无法插入关键帧了
                 //? 为什么这里对单目情况的处理不一样?
+                //回答：可能是单目关键帧相对比较密集
                 return false;
         }
     }

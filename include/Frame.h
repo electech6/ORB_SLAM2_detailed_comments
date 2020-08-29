@@ -182,17 +182,13 @@ public:
         return mOw.clone();
     }
 
-    // Returns inverse of rotation
-    //NOTICE 默认的mRwc存储的是当前帧时，相机从当前的坐标系变换到世界坐标系所进行的旋转，而我们常谈的旋转则说的是从世界坐标系到当前相机坐标系的旋转
     /**
-     * @brief 返回从世界坐标系到当前帧的旋转矩阵的逆矩阵 
-     * @details 说白了也就是返回从当前帧坐标系到世界坐标系的旋转
-     * 
-     * @return cv::Mat 旋转矩阵\f$\mathbf{R}_{wc}\f$
+     * @brief Get the Rotation Inverse object
+     * mRwc存储的是从当前相机坐标系到世界坐标系所进行的旋转，而我们一般用的旋转则说的是从世界坐标系到当前相机坐标系的旋转
+     * @return 返回从当前帧坐标系到世界坐标系的旋转
      */
     inline cv::Mat GetRotationInverse()
 	{
-		//所以直接返回其实就是我们常谈的旋转的逆了
         return mRwc.clone();
     }
 
@@ -371,11 +367,12 @@ public:
     std::vector<float> mvDepth;
     
     // Bag of Words Vector structures.
-    ///和词袋模型有关的向量
+    // 内部实际存储的是std::map<WordId, WordValue>
+    // WordId 和 WordValue 表示Word在叶子中的id 和权重
     DBoW2::BowVector mBowVec;
-    ///和词袋模型中特征有关的向量
+    // 内部实际存储 std::map<NodeId, std::vector<unsigned int> >
+    // NodeId 表示节点id，std::vector<unsigned int> 中实际存的是该节点id下所有特征点在图像中的索引
     DBoW2::FeatureVector mFeatVec;
-    ///@todo 这两个向量目前的具体含义还不是很清楚
 
     // ORB descriptor, each row associated to a keypoint.
     /// 左目摄像头和右目摄像头特征点对应的描述子
@@ -416,7 +413,8 @@ public:
     long unsigned int mnId; ///< Current Frame id.
 
     // Reference Keyframe.
-    KeyFrame* mpReferenceKF;//<指针，指向参考关键帧
+    // 普通帧与自己共视程度最高的关键帧作为参考关键帧
+    KeyFrame* mpReferenceKF;
 
     /**
      * @name 图像金字塔信息

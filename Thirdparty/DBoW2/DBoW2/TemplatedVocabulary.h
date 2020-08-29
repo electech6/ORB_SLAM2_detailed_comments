@@ -1122,7 +1122,16 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
 }
 
 // --------------------------------------------------------------------------
-
+/**
+ * @brief 将一幅图像所有的特征点转化为BowVector和FeatureVector
+ * 
+ * @tparam TDescriptor 
+ * @tparam F 
+ * @param[in] features      图像中所有的特征点
+ * @param[in & out] v       BowVector
+ * @param[in & out] fv      FeatureVector
+ * @param[in] levelsup      距离叶子的深度
+ */
 template<class TDescriptor, class F> 
 void TemplatedVocabulary<TDescriptor,F>::transform(
   const std::vector<TDescriptor>& features,
@@ -1137,6 +1146,7 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
   }
   
   // normalize 
+  // 根据选择的评分类型来确定是否需要将BowVector 归一化
   LNorm norm;
   bool must = m_scoring_object->mustNormalize(norm);
   
@@ -1145,17 +1155,20 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
   if(m_weighting == TF || m_weighting == TF_IDF)
   {
     unsigned int i_feature = 0;
+    // 遍历图像中所有的特征点
     for(fit = features.begin(); fit < features.end(); ++fit, ++i_feature)
     {
-      WordId id;  //单词的id
-      NodeId nid; // 树中节点的id
-      WordValue w; //权重
-      // w is the idf value if TF_IDF, 1 if TF
-      
+      WordId id;        // 叶子节点的Word id
+      NodeId nid;       // FeatureVector 里的NodeId，用于加速搜索
+      WordValue w;      // 叶子节点Word对应的权重
+
+      //  将当前描述子转化为Word id， Word weight，节点所属的父节点id（这里的父节点不是叶子的上一层，它距离叶子深度为levelsup）
+      // w is the idf value if TF_IDF, 1 if TF 
       transform(*fit, id, w, &nid, levelsup);
       
       if(w > 0) // not stopped
       { 
+        // 如果Word 权重大于0，将其添加到BowVector 和 FeatureVector
         v.addWeight(id, w);
         fv.addFeature(nid, i_feature);
       }
@@ -1179,7 +1192,6 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
       NodeId nid;
       WordValue w;
       // w is idf if IDF, or 1 if BINARY
-      
       transform(*fit, id, w, &nid, levelsup);
       
       if(w > 0) // not stopped
@@ -1213,7 +1225,17 @@ void TemplatedVocabulary<TDescriptor,F>::transform
 }
 
 // --------------------------------------------------------------------------
-
+/**
+ * @brief 将描述子转化为Word id， Word weight，节点所属的父节点id（这里的父节点不是叶子的上一层，它距离叶子深度为levelsup）
+ * 
+ * @tparam TDescriptor            
+ * @tparam F 
+ * @param[in] feature                 特征描述子
+ * @param[in & out] word_id           Word id
+ * @param[in & out] weight            Word 权重
+ * @param[in & out] nid               记录当前描述子转化为Word后所属的 node id，它距离叶子深度为levelsup
+ * @param[in] levelsup                距离叶子的深度
+ */
 template<class TDescriptor, class F>
 void TemplatedVocabulary<TDescriptor,F>::transform(const TDescriptor &feature, 
   WordId &word_id, WordValue &weight, NodeId *nid, int levelsup) const
@@ -1223,6 +1245,8 @@ void TemplatedVocabulary<TDescriptor,F>::transform(const TDescriptor &feature,
   typename vector<NodeId>::const_iterator nit;
 
   // level at which the node must be stored in nid, if given
+  // m_L: depth levels, m_L = 6 in ORB-SLAM2
+  // nid_level 当前特征点转化为的Word 所属的 node id，方便索引
   const int nid_level = m_L - levelsup;
   if(nid_level <= 0 && nid != NULL) *nid = 0; // root
 
@@ -1231,12 +1255,16 @@ void TemplatedVocabulary<TDescriptor,F>::transform(const TDescriptor &feature,
 
   do
   {
+    // 更新树的深度
     ++current_level;
+    // 取出当前节点所有子节点的id
     nodes = m_nodes[final_id].children;
+    // 取子节点中第1个的id，用于后面距离比较的初始值
     final_id = nodes[0];
- 
-    double best_d = F::distance(feature, m_nodes[final_id].descriptor);
 
+    // 取当前节点第一个子节点的描述子距离初始化最佳（小）距离
+    double best_d = F::distance(feature, m_nodes[final_id].descriptor);
+    // 遍历nodes中所有的描述子，找到最小距离对应的描述子
     for(nit = nodes.begin() + 1; nit != nodes.end(); ++nit)
     {
       NodeId id = *nit;
@@ -1248,12 +1276,14 @@ void TemplatedVocabulary<TDescriptor,F>::transform(const TDescriptor &feature,
       }
     }
     
+    // 记录当前描述子转化为Word后所属的 node id，它距离叶子深度为levelsup
     if(nid != NULL && current_level == nid_level)
       *nid = final_id;
     
   } while( !m_nodes[final_id].isLeaf() );
 
   // turn node id into word id
+  // 取出 vocabulary tree中node距离当前feature 描述子距离最小的那个node的 Word id 和 weight
   word_id = m_nodes[final_id].word_id;
   weight = m_nodes[final_id].weight;
 }
@@ -1350,8 +1380,8 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
     getline(f,s);
     stringstream ss;
     ss << s;
-    ss >> m_k;
-    ss >> m_L;
+    ss >> m_k;    // 树的分支数目
+    ss >> m_L;    // 树的深度
     int n1, n2;
     ss >> n1;
     ss >> n2;
@@ -1359,20 +1389,23 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
     if(m_k<0 || m_k>20 || m_L<1 || m_L>10 || n1<0 || n1>5 || n2<0 || n2>3)
     {
         std::cerr << "Vocabulary loading failure: This is not a correct text file!" << endl;
-	return false;
+	      return false;
     }
     
-    m_scoring = (ScoringType)n1;
-    m_weighting = (WeightingType)n2;
+    m_scoring = (ScoringType)n1;      // 评分类型
+    m_weighting = (WeightingType)n2;  // 权重类型
     createScoringObject();
 
-    // nodes
+    // 总共节点（nodes）数，是一个等比数列求和
+    //! bug 没有包含最后叶子节点数，应该改为 ((pow((double)m_k, (double)m_L + 2) - 1)/(m_k - 1))
+    //! 但是没有影响，因为这里只是reserve，实际存储是一步步resize实现
     int expected_nodes =
     (int)((pow((double)m_k, (double)m_L + 1) - 1)/(m_k - 1));
     m_nodes.reserve(expected_nodes);
-
+    // 预分配空间给 单词（叶子）数
     m_words.reserve(pow((double)m_k, (double)m_L + 1));
 
+    // 第一个节点是根节点，id设为0
     m_nodes.resize(1);
     m_nodes[0].id = 0;
     while(!f.eof())
@@ -1380,41 +1413,54 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
         string snode;
         getline(f,snode);
         stringstream ssnode;
-        ssnode << snode;
+        ssnode << snode;  
 
+        // nid 表示当前节点id，实际是读取顺序，从0开始
         int nid = m_nodes.size();
+        // 节点size 加1
         m_nodes.resize(m_nodes.size()+1);
-	m_nodes[nid].id = nid;
-	
+	      m_nodes[nid].id = nid;
+
+        // 读每行的第1个数字，表示父节点id
         int pid ;
         ssnode >> pid;
+        // 记录节点id的相互父子关系
         m_nodes[nid].parent = pid;
         m_nodes[pid].children.push_back(nid);
 
+        // 读取第2个数字，表示是否是叶子（Word）
         int nIsLeaf;
         ssnode >> nIsLeaf;
 
+        // 每个特征点描述子是256 bit，一个字节对应8 bit，所以一个特征点需要32个字节存储。
+        // 这里 F::L=32，也就是读取32个字节，最后以字符串形式存储在ssd
         stringstream ssd;
         for(int iD=0;iD<F::L;iD++)
         {
             string sElement;
             ssnode >> sElement;
             ssd << sElement << " ";
-	}
+	      }
+        // 将ssd存储在该节点的描述子
         F::fromString(m_nodes[nid].descriptor, ssd.str());
 
+        // 读取最后一个数字：节点的权重（Word才有）
         ssnode >> m_nodes[nid].weight;
 
         if(nIsLeaf>0)
-        {
+        {   
+            // 如果是叶子（Word），存储到m_words 
             int wid = m_words.size();
             m_words.resize(wid+1);
 
-            m_nodes[nid].word_id = wid;
+            //存储Word的id，具有唯一性
+            m_nodes[nid].word_id = wid;  
+            //构建 vector<Node*> m_words，存储word所在node的指针
             m_words[wid] = &m_nodes[nid];
         }
         else
         {
+            //非叶子节点，直接分配 m_k个分支
             m_nodes[nid].children.reserve(m_k);
         }
     }
@@ -1430,18 +1476,20 @@ void TemplatedVocabulary<TDescriptor,F>::saveToTextFile(const std::string &filen
 {
     fstream f;
     f.open(filename.c_str(),ios_base::out);
+    // 第一行打印 树的分支数、深度、评分方式、权重计算方式
     f << m_k << " " << m_L << " " << " " << m_scoring << " " << m_weighting << endl;
 
     for(size_t i=1; i<m_nodes.size();i++)
     {
         const Node& node = m_nodes[i];
-
+        // 每行第1个数字为父节点id
         f << node.parent << " ";
+        // 每行第2个数字标记是（1）否（0）为叶子（Word）
         if(node.isLeaf())
             f << 1 << " ";
         else
             f << 0 << " ";
-
+        // 接下来存储256位描述子，最后存储节点权重（叶子的情况下才有非零值）
         f << F::toString(node.descriptor) << " " << (double)node.weight << endl;
     }
 

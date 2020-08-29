@@ -42,7 +42,6 @@
 
 #include <thread>
 #include <mutex>
-//? 目前并不知道是用来做什么的
 #include "Thirdparty/g2o/g2o/types/types_seven_dof_expmap.h"
 
 namespace ORB_SLAM2

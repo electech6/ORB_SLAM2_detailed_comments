@@ -140,7 +140,7 @@ public:
     // The focal length should be similar or scale prediction will fail when projecting points
     // TODO: Modify MapPoint::PredictScale to take into account focal lenght
     /**
-     * @brief //? 看样子是和更新设置有关系
+     * @brief 
      * 
      * @param[in] strSettingPath 配置文件路径
      */
@@ -373,7 +373,7 @@ protected:
     std::vector<MapPoint*> mvpLocalMapPoints;
     
     // System
-    ///指向系统实例的指针  //? 有什么用?
+    ///指向系统实例的指针 
     System* mpSystem;
     
     //Drawers  可视化查看器相关
@@ -397,9 +397,9 @@ protected:
     float mbf;
 
     //New KeyFrame rules (according to fps)
-    ///和新建关键帧,以及重定位有关
+    // 新建关键帧和重定位中用来判断最小最大时间间隔，和帧率有关
     int mMinFrames;
-    int mMaxFrames;         //? 貌似和图像的帧率有关
+    int mMaxFrames;         
 
     // Threshold close/far points
     // Points seen as close by the stereo/RGBD sensor are considered reliable
@@ -416,17 +416,16 @@ protected:
     int mnMatchesInliers;
 
     //Last Frame, KeyFrame and Relocalisation Info
-    ///上一关键帧
+    // 上一关键帧
     KeyFrame* mpLastKeyFrame;
-    ///上一帧
+    // 上一帧
     Frame mLastFrame;
-    ///上一个关键帧的ID
+    // 上一个关键帧的ID
     unsigned int mnLastKeyFrameId;
-    ///上一次重定位的那一帧的ID
+    // 上一次重定位的那一帧的ID
     unsigned int mnLastRelocFrameId;
 
     //Motion Model
-    ///运动模型 //? 我知道是恒速模型,但是具体上保存的是什么呢?矩阵的数据组织格式又是什么?
     cv::Mat mVelocity;
 
     //Color order (true RGB, false BGR, ignored if grayscale)

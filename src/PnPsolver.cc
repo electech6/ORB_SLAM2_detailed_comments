@@ -236,7 +236,16 @@ cv::Mat PnPsolver::find(vector<bool> &vbInliers, int &nInliers)
     return iterate(mRansacMaxIts,bFlag,vbInliers,nInliers);    
 }
 
-//进行迭代计算
+
+/**
+ * @brief EPnP迭代计算
+ * 
+ * @param[in] nIterations   迭代次数
+ * @param[in] bNoMore       达到最大迭代次数的标志
+ * @param[in] vbInliers     内点的标记
+ * @param[in] nInliers      总共内点数
+ * @return cv::Mat          计算出来的位姿
+ */
 cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInliers, int &nInliers)
 {
     bNoMore = false;        //已经达到最大迭代次数的标志

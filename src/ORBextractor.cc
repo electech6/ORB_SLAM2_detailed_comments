@@ -183,7 +183,11 @@ static void computeOrbDescriptor(const KeyPoint& kpt,
     #define GET_VALUE(idx) center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + cvRound(pattern[idx].x*a - pattern[idx].y*b)]        
     // y'* step
     // x'
+<<<<<<< Updated upstream
 
+=======
+    
+>>>>>>> Stashed changes
 	//brief描述子由32*8位组成
 	//其中每一位是来自于两个像素点灰度的直接比较，所以每比较出8bit结果，需要16个随机点，这也就是为什么pattern需要+=16的原因
     for (int i = 0; i < 32; ++i, pattern += 16)
@@ -522,13 +526,9 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
 	//每层需要提取出来的特征点个数，这个向量也要根据图像金字塔设定的层数进行调整
     mnFeaturesPerLevel.resize(nlevels);
 	
-	//这个变量名起的我有点儿无言以对啊。。。敢不敢再乱点儿
 	//图片降采样缩放系数的倒数
     float factor = 1.0f / scaleFactor;
-	//每个单位缩放系数所希望的特征点个数？
-	//TODO 不明白这个公式是怎么的出来的，根据资料[https://blog.csdn.net/luoshixian099/article/details/48523267]来看貌似是
-	//从opencv那里借鉴过来的
-    //NOTICE 其实这里有很多函数，本身就是opencv的源码
+	//每个单位缩放系数所希望的特征点个数
     float nDesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)pow((double)factor, (double)nlevels));
 
 	//用于在特征点个数分配的，特征点的累计计数清空
@@ -553,20 +553,15 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
     const Point* pattern0 = (const Point*)bit_pattern_31_;	
 	//使用std::back_inserter的目的是可以快覆盖掉这个容器pattern之前的数据
 	//其实这里的操作就是，将在全局变量区域的、int格式的随机采样点以cv::point格式复制到当前类对象中的成员变量中
-	//NOTE 但是我觉得好蛋疼啊，你直接在全局变量区就使用cv::Point存储不可以吗？然后直接设置一个指针指过去不就可以了吗？而且还是只读的
-    //好在是这个只会生成1次
     std::copy(pattern0, pattern0 + npoints, std::back_inserter(pattern));
 
     //This is for orientation
 	//下面的内容是和特征点的旋转计算有关的
     // pre-compute the end of a row in a circular patch
 	//预先计算圆形patch中行的结束位置
-	//根据[https://blog.csdn.net/awww797877/article/details/52140995]里面好像是说这里存储的是图像块中行v所对应的最大u
 	//+1中的1表示那个圆的中间行
     umax.resize(HALF_PATCH_SIZE + 1);
 	
-	//NOTE 为什么使用cvFloor而不是使用C++中提供的Floor？但是好像没啥区别，根据[https://blog.csdn.net/csd_sudongliang/article/details/8019826]
-	//中所说的，好像只是有返回值不太一样罢了。
 	//cvFloor返回不大于参数的最大整数值，cvCeil返回不小于参数的最小整数值，cvRound则是四舍五入
     int v,		//循环辅助变量
 		v0,		//辅助变量
@@ -585,7 +580,7 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
         umax[v] = cvRound(sqrt(hp2 - v * v));		//结果都是大于0的结果，表示x坐标在这一行的边界
 
     // Make sure we are symmetric
-	//这里其实是使用了对称的方式计算上八分之一的圆周上的umax，目的也是为了保持严格的对称（如果按照常规的想法做，由于cvRound就会很容易出现不对称的情况，
+	//这里其实是使用了对称的方式计算上四分之一的圆周上的umax，目的也是为了保持严格的对称（如果按照常规的想法做，由于cvRound就会很容易出现不对称的情况，
 	//同时这些随机采样的特征点集也不能够满足旋转之后的采样不变性了）
 	for (v = HALF_PATCH_SIZE, v0 = 0; v >= vmin; --v)
     {
@@ -1102,7 +1097,7 @@ void ORBextractor::ComputeKeyPointsOctTree(
         {
 			//计算当前网格初始行坐标
             const float iniY =minBorderY+i*hCell;
-			//计算当前网格最大的行坐标，这里的+6=+3+3，即考虑到了多出来以便进行FAST特征点提取用的3像素边界
+			//计算当前网格最大的行坐标，这里的+6=+3+3，即考虑到了多出来3是为了cell边界像素进行FAST特征点提取用
 			//前面的EDGE_THRESHOLD指的应该是提取后的特征点所在的边界，所以minBorderY是考虑了计算半径时候的图像边界
 			//目测一个图像网格的大小是25*25啊
             float maxY = iniY+hCell+6;

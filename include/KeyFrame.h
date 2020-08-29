@@ -285,7 +285,6 @@ public:
         return a>b;
     }
 
-    // ? 暂时没有使用到
     static bool lId(KeyFrame* pKF1, KeyFrame* pKF2)
 	{
         return pKF1->mnId<pKF2->mnId;
@@ -306,7 +305,6 @@ public:
     /// 时间戳
     const double mTimeStamp;
 
-    // ? 既然这么多和Frame重复的地方,为什么不选择使用继承呢?
     // Grid (to speed up feature matching)
     // 和Frame类中的定义相同
     const int mnGridCols;
@@ -331,7 +329,7 @@ public:
     int mnLoopWords;
     /// 和那个形成回环的关键帧的词袋匹配程度的评分
     float mLoopScore;
-    // 和上面的变量作用差不多，不过这个变量是用来存储在辅助进行重定位的时候，要进行重定位的那个帧的id
+    // 用来存储在辅助进行重定位的时候，要进行重定位的那个帧的id
     long unsigned int mnRelocQuery;
     /// 和那个要进行重定位的帧,所具有相同的单词的个数
     int mnRelocWords;
@@ -361,8 +359,15 @@ public:
     const cv::Mat mDescriptors;
 
     //BoW
-    DBoW2::BowVector mBowVec; ///< Vector of words to represent images 当前图像的词袋模型表示
-    DBoW2::FeatureVector mFeatVec; ///< Vector of nodes with indexes of local features //?
+    // Vector of words to represent images 
+    // mBowVec 内部实际存储的是std::map<WordId, WordValue>
+    // WordId 和 WordValue 表示Word在叶子中的id 和权重
+    DBoW2::BowVector mBowVec; 
+
+    // Vector of nodes with indexes of local features 
+    // 内部实际存储 std::map<NodeId, std::vector<unsigned int> >
+    // NodeId 表示节点id，std::vector<unsigned int> 中实际存的是该节点id下所有特征点在图像中的索引
+    DBoW2::FeatureVector mFeatVec; 
 
     /// Pose relative to parent (this is computed when bad flag is activated)
     cv::Mat mTcp;
@@ -387,9 +392,9 @@ public:
 protected:
 
     // SE3 Pose and camera center
-    cv::Mat Tcw;    ///< 当前相机的位姿
-    cv::Mat Twc;    ///< 当前相机位姿的逆
-    cv::Mat Ow;     ///< 相机光心(左目)在世界坐标系下的坐标,这里和普通帧中的定义是一样的
+    cv::Mat Tcw;    // 当前相机的位姿，世界坐标系到相机坐标系
+    cv::Mat Twc;    // 当前相机位姿的逆
+    cv::Mat Ow;     // 相机光心(左目)在世界坐标系下的坐标,这里和普通帧中的定义是一样的
 
     cv::Mat Cw; ///< Stereo middel point. Only for visualization
 
@@ -398,23 +403,26 @@ protected:
 
     // BoW
     KeyFrameDatabase* mpKeyFrameDB;
-    /// 词袋对象,目测是封装了很多操作啊
+    /// 词袋对象
     ORBVocabulary* mpORBvocabulary;
 
     /// Grid over the image to speed up feature matching ,其实应该说是二维的,第三维的 vector中保存的是这个网格内的特征点的索引
     std::vector< std::vector <std::vector<size_t> > > mGrid;
 
     // Covisibility Graph
-    std::map<KeyFrame*,int> mConnectedKeyFrameWeights;              ///< 与该关键帧连接的关键帧与权重
-    std::vector<KeyFrame*> mvpOrderedConnectedKeyFrames;            ///< 排序后的关键帧,和下面的这个变量相对应
-    std::vector<int> mvOrderedWeights;                              ///< 排序后的权重(从大到小)
+     // 与该关键帧连接（至少15个共视地图点）的关键帧与权重
+    std::map<KeyFrame*,int> mConnectedKeyFrameWeights;   
+    // 共视关键帧中权重从大到小排序后的关键帧          
+    std::vector<KeyFrame*> mvpOrderedConnectedKeyFrames;            
+    // 共视关键帧中从大到小排序后的权重，和上面对应
+    std::vector<int> mvOrderedWeights;                             
 
     // ===================== Spanning Tree and Loop Edges ========================
     // std::set是集合，相比vector，进行插入数据这样的操作时会自动排序
-    bool mbFirstConnection;                     ///< 是否是第一次生成树
-    KeyFrame* mpParent;                         ///< 当前关键帧的父关键帧
-    std::set<KeyFrame*> mspChildrens;           ///< 存储当前关键帧的子关键帧
-    std::set<KeyFrame*> mspLoopEdges;           ///< 和当前关键帧形成回环关系的关键帧
+    bool mbFirstConnection;                     // 是否是第一次生成树
+    KeyFrame* mpParent;                         // 当前关键帧的父关键帧 （共视程度最高的）
+    std::set<KeyFrame*> mspChildrens;           // 存储当前关键帧的子关键帧
+    std::set<KeyFrame*> mspLoopEdges;           // 和当前关键帧形成回环关系的关键帧
 
     // Bad flags
     bool mbNotErase;            ///< 当前关键帧已经和其他的关键帧形成了回环关系，因此在各种优化的过程中不应该被删除
