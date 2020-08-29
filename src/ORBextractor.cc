@@ -1,16 +1,4 @@
 /**
- * @file ORBextractor.cc
- * @author guoqing (1337841346@qq.com)
- * @brief ORB特征提取器的实现
- * @version 0.1
- * @date 2019-02-15
- * 
- * @copyright Copyright (c) 2019
- * 
- */
-
-
-/**
 * This file is part of ORB-SLAM2.
 * This file is based on the file orb.cpp from the OpenCV library (see BSD license below).
 *
@@ -183,11 +171,6 @@ static void computeOrbDescriptor(const KeyPoint& kpt,
     #define GET_VALUE(idx) center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + cvRound(pattern[idx].x*a - pattern[idx].y*b)]        
     // y'* step
     // x'
-<<<<<<< Updated upstream
-
-=======
-    
->>>>>>> Stashed changes
 	//brief描述子由32*8位组成
 	//其中每一位是来自于两个像素点灰度的直接比较，所以每比较出8bit结果，需要16个随机点，这也就是为什么pattern需要+=16的原因
     for (int i = 0; i < 32; ++i, pattern += 16)
