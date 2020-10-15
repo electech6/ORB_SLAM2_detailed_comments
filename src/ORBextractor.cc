@@ -118,7 +118,7 @@ static float IC_Angle(const Mat& image, Point2f pt,  const vector<int> & u_max)
 		// 获取某行像素横坐标的最大范围，注意这里的图像块是圆形的！
         int d = u_max[v];
 		//在坐标范围内挨个像素遍历，实际是一次遍历2个
-        // 假设每次处理的两个点坐标，中心线上方为(x,y),中心线下方为(x,-y) 
+        // 假设每次处理的两个点坐标，中心线下方为(x,y),中心线上方为(x,-y) 
         // 对于某次待处理的两个点：m_10 = Σ x*I(x,y) =  x*I(x,y) + x*I(x,-y) = x*(I(x,y) + I(x,-y))
         // 对于某次待处理的两个点：m_01 = Σ y*I(x,y) =  y*I(x,y) - y*I(x,-y) = y*(I(x,y) - I(x,-y))
         for (int u = -d; u <= d; ++u)

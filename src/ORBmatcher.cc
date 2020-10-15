@@ -1002,7 +1002,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                         const float distey = ey-kp2.pt.y;
                         // Step 2.7 极点e2到kp2的像素距离如果小于阈值th,认为kp2对应的MapPoint距离pKF1相机太近，跳过该匹配点对
                         // 作者根据kp2金字塔尺度因子(scale^n，scale=1.2，n为层数)定义阈值th
-                        // 金字塔层数从0到7，对应距离（没有平方）阈值是10-20个像素
+                        // 金字塔层数从0到7，对应距离 sqrt(100*pKF2->mvScaleFactors[kp2.octave]) 是10-20个像素
                         //? 对这个阈值的有效性持怀疑态度
                         if(distex*distex+distey*distey<100*pKF2->mvScaleFactors[kp2.octave])
                             continue;

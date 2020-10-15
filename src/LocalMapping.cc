@@ -49,9 +49,9 @@ LocalMapping::LocalMapping(Map *pMap, const float bMonocular):
      * mbStopped：          为true表示可以并终止localmapping 线程
      * mbNotStop：          true，表示不要停止 localmapping 线程，因为要插入关键帧了。需要和 mbStopped 结合使用
      * mbAcceptKeyFrames：  true，允许接受关键帧。tracking 和local mapping 之间的关键帧调度
-     * mbAbortBA：          是否流产BA优化优化的标志位
-     * mbFinishRequested：  请求终止当前线程 的标志。注意 只是 请求，不一定终止。终止要看 mbFinished
-     * mbResetRequested：   请求当前线程 复位的标志。true，表示一直请求复位，但复位还未完成；表示复位完成为false
+     * mbAbortBA：          是否流产BA优化的标志位
+     * mbFinishRequested：  请求终止当前线程的标志。注意只是请求，不一定终止。终止要看 mbFinished
+     * mbResetRequested：   请求当前线程复位的标志。true，表示一直请求复位，但复位还未完成；表示复位完成为false
      * mbFinished：         判断最终LocalMapping::Run() 是否完成的标志。
      */
 }
@@ -339,7 +339,6 @@ void LocalMapping::CreateNewMapPoints()
     for(size_t i=0; i<vpNeighKFs.size(); i++)
     {
         // 下面的过程会比较耗费时间,因此如果有新的关键帧需要处理的话,就先去处理新的关键帧吧
-        //? 这样会不会造成累积的待处理关键帧逐渐增多
         if(i>0 && CheckNewKeyFrames())
             return;
 
@@ -744,27 +743,12 @@ void LocalMapping::SearchInNeighbors()
 cv::Mat LocalMapping::ComputeF12(KeyFrame *&pKF1, KeyFrame *&pKF2)
 {
     // 先构造两帧之间的R12,t12
-
     cv::Mat R1w = pKF1->GetRotation();
     cv::Mat t1w = pKF1->GetTranslation();
     cv::Mat R2w = pKF2->GetRotation();
     cv::Mat t2w = pKF2->GetTranslation();
 
     cv::Mat R12 = R1w*R2w.t();
-    
-    /*
-     * 这里可以这样理解：世界坐标系原点记为W，关键帧1和关键帧2的相机光心分别记为O1 O2. 根据Frame类中的有关说明，在世界坐标系下
-     * 这两帧相机光心的坐标可以记为：
-     * O1=-Rw1*t1w
-     * O2=-RW2*t2w
-     * 那么 t12 本质上描述的是从O2 -> O1相机光心所产生的位移，当在世界坐标系下的时候可以写成：
-     * t12(w) = O2-O1 = -Rw2*t2w+Rw1*t1w
-     * 要放在O1坐标系下表示的话，需要进行一个旋转变换（注意不要有平移变换，这个是对点才用的，如果对向量也应用的话很明显t12的长度都变了）
-     * t12(1) = R1w*t12(w)
-     *        = -R1w*Rw2*t2w+Rw1*R1w*t1w
-     *        = -R1w*Rw2+t2w+t1w
-     * 就是下面这行代码中写的：
-     */ 
     
     cv::Mat t12 = -R1w*R2w.t()*t2w+t1w;
 
