@@ -13,6 +13,8 @@
 
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
+欢迎{扫描](https://mmbiz.qpic.cn/mmbiz_jpg/rqpicxXx8cNm2RvzfPhoqBy7jamUw9eZuHHvbibicSgwN9RcJd7ialpHll3PRnR2gPySBW5efP0RnaWxicsepaA7UfQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
+
 附部分内容讲解视频：
 
 [ORBSLAM2新手必看：简介、安装、运行](https://www.bilibili.com/video/BV1DV411z7mY)
