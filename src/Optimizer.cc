@@ -1075,9 +1075,9 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
     // 最大关键帧id，用于添加顶点时使用
     const unsigned int nMaxKFid = pMap->GetMaxKFid();
 
-    // 仅经过Sim3传播调整，未经过优化的keyframe的pose
+    // 记录所有优化前关键帧的位姿，优先使用在闭环时通过Sim3传播调整过的Sim3位姿
     vector<g2o::Sim3,Eigen::aligned_allocator<g2o::Sim3> > vScw(nMaxKFid+1);
-    // 经过Sim3传播调整，经过优化的keyframe的pose
+    // 记录所有关键帧经过本次本质图优化过的位姿
     vector<g2o::Sim3,Eigen::aligned_allocator<g2o::Sim3> > vCorrectedSwc(nMaxKFid+1);
     // 这个变量没有用
     vector<g2o::VertexSim3Expmap*> vpVertices(nMaxKFid+1);
@@ -1102,16 +1102,16 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
 
         if(it!=CorrectedSim3.end())
         {
-            // 如果该关键帧在闭环时通过Sim3传播调整过，用校正后的位姿
+            // 如果该关键帧在闭环时通过Sim3传播调整过，优先用调整后的Sim3位姿
             vScw[nIDi] = it->second;
             VSim3->setEstimate(it->second);
         }
         else
         {
-            // 如果该关键帧在闭环时没有通过Sim3传播调整过，用自身的位姿
+            // 如果该关键帧在闭环时没有通过Sim3传播调整过，用跟踪时的位姿
             Eigen::Matrix<double,3,3> Rcw = Converter::toMatrix3d(pKF->GetRotation());
             Eigen::Matrix<double,3,1> tcw = Converter::toVector3d(pKF->GetTranslation());
-            g2o::Sim3 Siw(Rcw,tcw,1.0);
+            g2o::Sim3 Siw(Rcw,tcw,1.0); //尺度为1
             vScw[nIDi] = Siw;
             VSim3->setEstimate(Siw);
         }
@@ -1138,7 +1138,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
     const Eigen::Matrix<double,7,7> matLambda = Eigen::Matrix<double,7,7>::Identity();
 
     // Set Loop edges
-    // Step 3：添加边：LoopConnections是闭环时因为地图点调整而出现的新关键帧连接关系（不包括当前帧与闭环匹配帧之间的连接关系）
+    // Step 3：添加第1种边：LoopConnections是闭环时因为地图点调整而出现的新关键帧连接关系
     for(map<KeyFrame *, set<KeyFrame *> >::const_iterator mit = LoopConnections.begin(), mend=LoopConnections.end(); mit!=mend; mit++)
     {
         KeyFrame* pKF = mit->first;
@@ -1152,10 +1152,14 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
         for(set<KeyFrame*>::const_iterator sit=spConnections.begin(), send=spConnections.end(); sit!=send; sit++)
         {
             const long unsigned int nIDj = (*sit)->mnId;
-            if((nIDi!=pCurKF->mnId || nIDj!=pLoopKF->mnId)   // 不包括“当前关键帧”和“闭环关键帧”，在他们之外新增加的连接关系
-                    && pKF->GetWeight(*sit)<minFeat)         // 如果共视程度太少,也不行,不足以构成约束的边
+            // 条件1：至少有一个不是pCurKF或pLoopKF
+            // 条件2：共视程度太少(<100),不足以构成约束的边
+            if((nIDi!=pCurKF->mnId || nIDj!=pLoopKF->mnId)   
+                    && pKF->GetWeight(*sit)<minFeat)       
                 continue;
 
+            // 通过上面考验的帧有两种情况：
+            // 1、恰好是当前帧及其闭环帧 nIDi=pCurKF 并且nIDj=pLoopKF（此时忽略共视程度）；2、 任意两对，共视程度大于100
             const g2o::Sim3 Sjw = vScw[nIDj];
             // 得到两个pose间的Sim3变换
             const g2o::Sim3 Sji = Sjw * Swi;
@@ -1163,10 +1167,10 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
             g2o::EdgeSim3* e = new g2o::EdgeSim3();
             e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(nIDj)));
             e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(nIDi)));
-            // ?根据两个Pose顶点的位姿算出相对位姿作为边，那还存在误差？优化有用？因为闭环MapPoints调整新形成的边不优化？
+            // Sji内部是经过了Sim调整的观测
             e->setMeasurement(Sji);
 
-            // 信息矩阵是单位阵,说明sim3中每个自由度的贡献都是一样的,并且所有的这个边对总误差的贡献也都是一样大的
+            // 信息矩阵是单位阵,说明这类新增加的边对总误差的贡献也都是一样大的
             e->information() = matLambda;
 
             optimizer.addEdge(e);
@@ -1188,16 +1192,15 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
 
         LoopClosing::KeyFrameAndPose::const_iterator iti = NonCorrectedSim3.find(pKF);
 
-        // 尽可能得到未经过Sim3传播调整的位姿
         if(iti!=NonCorrectedSim3.end())
-            Swi = (iti->second).inverse();
+            Swi = (iti->second).inverse();  //优先使用未经过Sim3传播调整的位姿
         else
-            Swi = vScw[nIDi].inverse();
+            Swi = vScw[nIDi].inverse();     //没找到才考虑已经经过Sim3传播调整的位姿
 
         KeyFrame* pParentKF = pKF->GetParent();
 
         // Spanning tree edge
-        // Step 4.1：添加扩展树的边（有父关键帧）
+        // Step 4.1：添加第2种边：扩展树的边（有父关键帧）
         // 父关键帧就是和当前帧共视程度最高的关键帧
         if(pParentKF)
         {
@@ -1207,7 +1210,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
 
             LoopClosing::KeyFrameAndPose::const_iterator itj = NonCorrectedSim3.find(pParentKF);
 
-            // 尽可能得到未经过Sim3传播调整的位姿
+            //优先使用未经过Sim3传播调整的位姿
             if(itj!=NonCorrectedSim3.end())
                 Sjw = itj->second;
             else
@@ -1227,19 +1230,20 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
         }
 
         // Loop edges
-        // Step 4.2：添加在CorrectLoop函数中AddLoopEdge函数添加的闭环连接边（当前帧与闭环匹配帧之间的连接关系）(这里面也包括了当前遍历到的这个关键帧之前曾经存在过的回环边)
-        // 使用经过Sim3调整前关键帧之间的相对关系作为边
+        // Step 4.2：添加第3种边：当前帧与闭环匹配帧之间的连接关系(这里面也包括了当前遍历到的这个关键帧之前曾经存在过的回环边)
+        // 获取和当前关键帧形成闭环关系的关键帧
         const set<KeyFrame*> sLoopEdges = pKF->GetLoopEdges();
         for(set<KeyFrame*>::const_iterator sit=sLoopEdges.begin(), send=sLoopEdges.end(); sit!=send; sit++)
         {
             KeyFrame* pLKF = *sit;
+            // 注意这里控制了要比当前遍历到的这个关键帧的id要小,这个也是为了避免重复添加
             if(pLKF->mnId<pKF->mnId)
             {
                 g2o::Sim3 Slw;
 
                 LoopClosing::KeyFrameAndPose::const_iterator itl = NonCorrectedSim3.find(pLKF);
 
-                // 尽可能得到未经过Sim3传播调整的位姿
+                //优先使用未经过Sim3传播调整的位姿
                 if(itl!=NonCorrectedSim3.end())
                     Slw = itl->second;
                 else
@@ -1257,8 +1261,8 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
         }
 
         // Covisibility graph edges
-        // Step 4.3：有很高共视关系的关键帧也作为边进行优化
-        // 使用经过Sim3调整前关键帧之间的相对关系作为边
+        // Step 4.3：添加第4种边：有很高(>=100)共视关系的关键帧也作为边进行优化
+        // 优先使用经过Sim3调整前关键帧之间的相对关系作为边
         const vector<KeyFrame*> vpConnectedKFs = pKF->GetCovisiblesByWeight(minFeat);
         for(vector<KeyFrame*>::const_iterator vit=vpConnectedKFs.begin(); vit!=vpConnectedKFs.end(); vit++)
         {
@@ -1277,7 +1281,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
 
                     LoopClosing::KeyFrameAndPose::const_iterator itn = NonCorrectedSim3.find(pKFn);
 
-                    // 尽可能得到未经过Sim3传播调整的位姿
+                    // 优先未经过Sim3传播调整的位姿
                     if(itn!=NonCorrectedSim3.end())
                         Snw = itn->second;
                     else
@@ -1295,14 +1299,14 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
                 }
             } // 如果这个比较好的共视关系的约束之前没有被重复添加过
         } // 遍历所有于当前遍历到的关键帧具有较好的共视关系的关键帧
-    } // 添加跟踪时形成的边、闭环匹配成功形成的边等 normal 的边
+    } // 添加跟踪时形成的边、闭环匹配成功形成的边
 
     // Optimize!
     // Step 5：开始g2o优化
     optimizer.initializeOptimization();
     optimizer.optimize(20);
 
-    // 要准备对地图中的内容进行更新了
+    // 更新地图前，先上锁，防止冲突
     unique_lock<mutex> lock(pMap->mMutexMapUpdate);
 
     // SE3 Pose Recovering. Sim3:[sR t;0 1] -> SE3:[R t/s;0 1]
@@ -1331,7 +1335,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
     }
 
     // Correct points. Transform to "non-optimized" reference keyframe pose and transform back with optimized pose
-    // Step 7：步骤5和步骤6优化得到关键帧的位姿后，MapPoints根据参考帧优化前后的相对关系调整自己的位置
+    // Step 7：步骤5和步骤6优化得到关键帧的位姿后，地图点根据参考帧优化前后的相对关系调整自己的位置
     // 遍历所有地图点
     for(size_t i=0, iend=vpMPs.size(); i<iend; i++)
     {
@@ -1341,21 +1345,21 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
             continue;
 
         int nIDr;
-        // 该MapPoint经过Sim3调整过
+        // 该地图点在闭环检测中被当前KF调整过，那么使用调整它的KF id
         if(pMP->mnCorrectedByKF==pCurKF->mnId)
         {
             nIDr = pMP->mnCorrectedReference;
         }
         else
         {
-            // 通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
+            // 通常情况下地图点的参考关键帧就是创建该地图点的那个关键帧
             KeyFrame* pRefKF = pMP->GetReferenceKeyFrame();
             nIDr = pRefKF->mnId;
         }
 
-        // 得到MapPoint参考关键帧步骤5优化前的位姿
+        // 得到地图点参考关键帧优化前的位姿
         g2o::Sim3 Srw = vScw[nIDr];
-        // 得到MapPoint参考关键帧优化后的位姿
+        // 得到地图点参考关键帧优化后的位姿
         g2o::Sim3 correctedSwr = vCorrectedSwc[nIDr];
 
         cv::Mat P3Dw = pMP->GetWorldPos();

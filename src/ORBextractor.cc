@@ -488,7 +488,7 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
 	//然后逐层计算图像金字塔中图像相当于初始图像的缩放系数 
     for(int i=1; i<nlevels; i++)  
     {
-		//呐，其实就是这样累乘计算得出来的
+		//其实就是这样累乘计算得出来的
         mvScaleFactor[i]=mvScaleFactor[i-1]*scaleFactor;
 		//原来这里的sigma^2就是每层图像相对于初始图像缩放因子的平方
         mvLevelSigma2[i]=mvScaleFactor[i]*mvScaleFactor[i];
@@ -1151,7 +1151,7 @@ void ORBextractor::ComputeKeyPointsOctTree(
 		//并且调整其大小为欲提取出来的特征点个数（当然这里也是扩大了的，因为不可能所有的特征点都是在这一个图层中提取出来的）
         keypoints.reserve(nfeatures);
 
-        // 根据mnFeaturesPerLevel,即该层的兴趣点数,对特征点进行剔除
+        // 根据mnFeatuvector<KeyPoint> & keypoints = allKeypoints[level];resPerLevel,即该层的兴趣点数,对特征点进行剔除
 		//返回值是一个保存有特征点的vector容器，含有剔除后的保留下来的特征点
         //得到的特征点的坐标，依旧是在当前图层下来讲的
         keypoints = DistributeOctTree(vToDistributeKeys, 			//当前图层提取出来的特征点，也即是等待剔除的特征点

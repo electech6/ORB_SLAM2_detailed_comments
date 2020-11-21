@@ -204,14 +204,14 @@ bool LoopClosing::DetectLoop()
     // 2、检测“子候选组”中每一个关键帧是否存在于“连续组”，如果存在 nCurrentConsistency++，则将该“子候选组”放入“当前连续组vCurrentConsistentGroups”
     // 3、如果nCurrentConsistency大于等于3，那么该”子候选组“代表的候选帧过关，进入mvpEnoughConsistentCandidates
     
-    // 相关的概念说明:
+    // 相关的概念说明:（为方便理解，见视频里的图示）
     // 组(group): 对于某个关键帧, 其和其具有共视关系的关键帧组成了一个"组";
     // 子候选组(CandidateGroup): 对于某个候选的回环关键帧, 其和其具有共视关系的关键帧组成的一个"组";
     // 连续(Consistent):  不同的组之间如果共同拥有一个及以上的关键帧,那么称这两个组之间具有连续关系
     // 连续性(Consistency):称之为连续长度可能更合适,表示累计的连续的链的长度:A--B 为1, A--B--C--D 为3等;具体反映在数据类型 ConsistentGroup.second上
     // 连续组(Consistent group): mvConsistentGroups存储了上次执行回环检测时, 新的被检测出来的具有连续性的多个组的集合.由于组之间的连续关系是个网状结构,因此可能存在
     //                          一个组因为和不同的连续组链都具有连续关系,而被添加两次的情况(当然连续性度量是不相同的)
-    // 连续组链:我guoqing自造的称呼,类似于菊花链A--B--C--D这样形成了一条连续组链.对于这个例子中,由于可能E,F都和D有连续关系,因此连续组链会产生分叉;为了简化计算,连续组中将只会保存
+    // 连续组链:自造的称呼,类似于菊花链A--B--C--D这样形成了一条连续组链.对于这个例子中,由于可能E,F都和D有连续关系,因此连续组链会产生分叉;为了简化计算,连续组中将只会保存
     //         最后形成连续关系的连续组们(见下面的连续组的更新)
     // 子连续组: 上面的连续组中的一个组
     // 连续组的初始值: 在遍历某个候选帧的过程中,如果该子候选组没有能够和任何一个上次的子连续组产生连续关系,那么就将添加自己组为连续组,并且连续性为0(相当于新开了一个连续链)
@@ -245,7 +245,7 @@ bool LoopClosing::DetectLoop()
         // Step 5.3：遍历前一次闭环检测到的“子连续组”
         // 上一次闭环的连续组 std::vector<ConsistentGroup> mvConsistentGroups
         // 其中ConsistentGroup的定义：typedef pair<set<KeyFrame*>,int> ConsistentGroup
-        // 其中 ConsistentGroup.first对应每个“连续组”中的关键帧，ConsistentGroup.second为每个“连续组”的序号
+        // 其中 ConsistentGroup.first对应每个“连续组”中的关键帧，ConsistentGroup.second为每个“连续组”的已连续次数
         for(size_t iG=0, iendG=mvConsistentGroups.size(); iG<iendG; iG++)
         {
             // 取出之前的一个子连续组中的关键帧集合
@@ -269,7 +269,7 @@ bool LoopClosing::DetectLoop()
             if(bConsistent)
             {
                 // Step 5.5：如果判定为连续，接下来判断是否达到连续的条件
-                // 取出和当前的候选组发生"连续"关系的子连续组的"已连续id"
+                // 取出和当前的候选组发生"连续"关系的子连续组的"已连续次数"
                 int nPreviousConsistency = mvConsistentGroups[iG].second;
                 // 将当前候选组连续程度 +1，
                 int nCurrentConsistency = nPreviousConsistency + 1;
@@ -385,7 +385,7 @@ bool LoopClosing::ComputeSim3()
     // 完成 Step 1 的匹配后，被保留的候选帧数量
     int nCandidates=0;
 
-    // Step 1. 遍历闭环候选帧集，初步筛选出与当前帧的匹配特征点数大于20的候选帧集合，并为每一个候选帧构造一个Sim3Solver
+    // Step 1. 遍历闭环候选帧集，初步筛选出与当前关键帧的匹配特征点数大于20的候选帧集合，并为每一个候选帧构造一个Sim3Solver
     for(int i=0; i<nInitialCandidates; i++)
     {
         // Step 1.1 从筛选的闭环候选帧中取出一帧有效关键帧pKF
@@ -406,7 +406,7 @@ bool LoopClosing::ComputeSim3()
         // vvpMapPointMatches 是匹配特征点对应的地图点,本质上来自于候选闭环帧
         int nmatches = matcher.SearchByBoW(mpCurrentKF,pKF,vvpMapPointMatches[i]);
 
-        // 匹配的特征点数太少，该候选帧剔除
+        // 粗筛：匹配的特征点数太少，该候选帧剔除
         if(nmatches<20)
         {
             vbDiscarded[i] = true;
@@ -419,7 +419,7 @@ bool LoopClosing::ComputeSim3()
             // 如果是false，则是7 自由度优化（单目）
             Sim3Solver* pSolver = new Sim3Solver(mpCurrentKF,pKF,vvpMapPointMatches[i],mbFixScale);
 
-            // Sim3Solver Ransac 过程至少20个inliers 300次迭代
+            // Sim3Solver Ransac 过程置信度0.99，至少20个inliers 最多300次迭代
             pSolver->SetRansacParameters(0.99,20,300);
             vpSim3Solvers[i] = pSolver;
         }
@@ -561,6 +561,7 @@ bool LoopClosing::ComputeSim3()
                 if(!pMP->isBad() && pMP->mnLoopPointForKF!=mpCurrentKF->mnId)
                 {
                     mvpLoopMapPoints.push_back(pMP);
+                    // 标记一下
                     pMP->mnLoopPointForKF=mpCurrentKF->mnId;
                 }
             }
@@ -571,7 +572,7 @@ bool LoopClosing::ComputeSim3()
     // Step 4：将闭环关键帧及其共视关键帧的所有地图点投影到当前关键帧进行投影匹配
     // 根据投影查找更多的匹配（成功的闭环匹配需要满足足够多的匹配特征点数）
     // 根据Sim3变换，将每个mvpLoopMapPoints投影到mpCurrentKF上，搜索新的匹配对
-    // mvpCurrentMatchedPoints将用于SearchAndFuse中检测当前帧MapPoints与匹配的MapPoints是否存在冲突
+    // mvpCurrentMatchedPoints是前面经过SearchBySim3得到的已经匹配的点对，这里就忽略不再匹配了
     // 搜索范围系数为10
     matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);
 
@@ -653,7 +654,6 @@ void LoopClosing::CorrectLoop()
     // 一直等到局部地图线程结束再继续
     while(!mpLocalMapper->isStopped())
     {
-        //usleep(1000);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
@@ -676,7 +676,7 @@ void LoopClosing::CorrectLoop()
     KeyFrameAndPose CorrectedSim3, NonCorrectedSim3;
     // 先将mpCurrentKF的Sim3变换存入，认为是准的，所以固定不动
     CorrectedSim3[mpCurrentKF]=mg2oScw;
-    // ? Twc 和上面 mg2oScw 关系是仅仅相差一个尺度吗？
+    // 当前关键帧到世界坐标系下的变换矩阵
     cv::Mat Twc = mpCurrentKF->GetPoseInverse();
 
     // 对地图点操作
@@ -691,7 +691,7 @@ void LoopClosing::CorrectLoop()
         {
             KeyFrame* pKFi = *vit;
             cv::Mat Tiw = pKFi->GetPose();
-            if(pKFi!=mpCurrentKF)
+            if(pKFi!=mpCurrentKF)      //跳过当前关键帧，因为当前关键帧的位姿已经在前面优化过了，在这里是参考基准
             {
                 // 得到当前关键帧 mpCurrentKF 到其共视关键帧 pKFi 的相对变换
                 cv::Mat Tic = Tiw*Twc;
@@ -751,11 +751,11 @@ void LoopClosing::CorrectLoop()
 
                 cv::Mat cvCorrectedP3Dw = Converter::toCvMat(eigCorrectedP3Dw);
                 pMPi->SetWorldPos(cvCorrectedP3Dw);
-                // 记录矫正该地图点的关键帧id
+                // 记录矫正该地图点的关键帧id，防止重复
                 pMPi->mnCorrectedByKF = mpCurrentKF->mnId;
                 // 记录该地图点所在的关键帧id
                 pMPi->mnCorrectedReference = pKFi->mnId;
-                // 勿忘更新
+                // 因为地图点更新了，需要更新其平均观测方向以及观测距离范围
                 pMPi->UpdateNormalAndDepth();
             }
 
@@ -787,6 +787,7 @@ void LoopClosing::CorrectLoop()
         {
             if(mvpCurrentMatchedPoints[i])
             {
+                //取出同一个索引对应的两种地图点，决定是否要替换
                 // 匹配投影得到的地图点
                 MapPoint* pLoopMP = mvpCurrentMatchedPoints[i];
                 // 原来的地图点
@@ -810,9 +811,10 @@ void LoopClosing::CorrectLoop()
     // Project MapPoints observed in the neighborhood of the loop keyframe
     // into the current keyframe and neighbors using corrected poses.
     // Fuse duplications.
-    // Step 4：将闭环相连关键帧组mvpLoopMapPoints 投影到当前关键帧组中，进行匹配，新增或替换当前关键帧组中KF的地图点
+    // Step 4：将闭环相连关键帧组mvpLoopMapPoints 投影到当前关键帧组中，进行匹配，融合，新增或替换当前关键帧组中KF的地图点
     // 因为 闭环相连关键帧组mvpLoopMapPoints 在地图中时间比较久经历了多次优化，认为是准确的
     // 而当前关键帧组中的关键帧的地图点是最近新计算的，可能有累积误差
+    // CorrectedSim3：存放矫正后当前关键帧的共视关键帧，及其世界坐标系下Sim3 变换
     SearchAndFuse(CorrectedSim3);
 
 
@@ -821,7 +823,7 @@ void LoopClosing::CorrectLoop()
     // LoopConnections：存储因为闭环地图点调整而新生成的连接关系
     map<KeyFrame*, set<KeyFrame*> > LoopConnections;
 
-    // Step 5.1：遍历当前帧相连关键帧（一级相连）
+    // Step 5.1：遍历当前帧相连关键帧组（一级相连）
     for(vector<KeyFrame*>::iterator vit=mvpCurrentConnectedKFs.begin(), vend=mvpCurrentConnectedKFs.end(); vit!=vend; vit++)
     {
         KeyFrame* pKFi = *vit;
@@ -851,7 +853,7 @@ void LoopClosing::CorrectLoop()
 
     // Add loop edge
     // Step 7：添加当前帧与闭环匹配帧之间的边（这个连接关系不优化）
-    // ?这两句话应该放在OptimizeEssentialGraph之前，因为OptimizeEssentialGraph的步骤4.2中有优化
+    // !这两句话应该放在OptimizeEssentialGraph之前，因为OptimizeEssentialGraph的步骤4.2中有优化
     mpMatchedKF->AddLoopEdge(mpCurrentKF);
     mpCurrentKF->AddLoopEdge(mpMatchedKF);
 
@@ -876,7 +878,7 @@ void LoopClosing::CorrectLoop()
  * 因为 闭环相连关键帧组mvpLoopMapPoints 在地图中时间比较久经历了多次优化，认为是准确的
  * 而当前关键帧组中的关键帧的地图点是最近新计算的，可能有累积误差
  * 
- * @param[in] CorrectedPosesMap         待闭环矫正的当前KF对应的共视关键帧及Sim3变换
+ * @param[in] CorrectedPosesMap         矫正的当前KF对应的共视关键帧及Sim3变换
  */
 void LoopClosing::SearchAndFuse(const KeyFrameAndPose &CorrectedPosesMap)
 {
@@ -895,7 +897,7 @@ void LoopClosing::SearchAndFuse(const KeyFrameAndPose &CorrectedPosesMap)
         // Step 2 将mvpLoopMapPoints投影到pKF帧匹配，检查地图点冲突并融合
         // mvpLoopMapPoints：与当前关键帧闭环匹配上的关键帧及其共视关键帧组成的地图点
         vector<MapPoint*> vpReplacePoints(mvpLoopMapPoints.size(),static_cast<MapPoint*>(NULL));
-        // vpReplacePoints：存储mvpLoopMapPoints投影到pKF匹配后需要替换掉的新增地图点,索引和mvpLoopMapPoints一致
+        // vpReplacePoints：存储mvpLoopMapPoints投影到pKF匹配后需要替换掉的新增地图点,索引和mvpLoopMapPoints一致，初始化为空
         // 搜索区域系数为4
         matcher.Fuse(pKF,cvScw,mvpLoopMapPoints,4,vpReplacePoints);
 

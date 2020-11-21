@@ -388,7 +388,7 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
         int ind2=-1;
         int ind3=-1;
 
-        // 计算rotHist中最大的三个的index; 如果出现了"一枝独秀"的情况,那么说明次优或者第三优的也不足够好,直接返回-1
+        // 筛选出在旋转角度差落在在直方图区间内数量最多的前三个bin的索引
         ComputeThreeMaxima(rotHist,HISTO_LENGTH,ind1,ind2,ind3);
 
         for(int i=0; i<HISTO_LENGTH; i++)
@@ -397,7 +397,7 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
             if(i==ind1 || i==ind2 || i==ind3)
                 continue;
 
-            // 将除了ind1 ind2 ind3以外的匹配点去掉
+            // 剔除掉不在前三的匹配对，因为他们不符合“主流旋转方向”  
             for(size_t j=0, jend=rotHist[i].size(); j<jend; j++)
             {
                 vpMapPointMatches[rotHist[i][j]]=static_cast<MapPoint*>(NULL);
@@ -438,7 +438,7 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
     cv::Mat Ow = -Rcw.t()*tcw;                              // 世界坐标系下相机光心坐标
 
     // Set of MapPoints already found in the KeyFrame
-    // 使用set类型，并去除没有匹配的点，用于快速检索某个MapPoint是否有匹配
+    // 使用set类型，记录前面已经成功的匹配关系，避免重复匹配。并去除其中无效匹配关系（NULL）
     set<MapPoint*> spAlreadyFound(vpMatched.begin(), vpMatched.end());
     spAlreadyFound.erase(static_cast<MapPoint*>(NULL));
 
@@ -451,7 +451,7 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
         MapPoint* pMP = vpPoints[iMP];
 
         // Discard Bad MapPoints and already found
-        // Step 2.1 丢弃坏点和当前KF已经匹配上的地图点
+        // Step 2.1 丢弃坏点，跳过当前KF已经匹配上的地图点
         if(pMP->isBad() || spAlreadyFound.count(pMP))
             continue;
 
@@ -1406,7 +1406,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
             if(pMPinKF)
             {
                 // 如果这个地图点已经存在，则记录要替换信息
-                // 这里不能直接替换（因为地图点会和很多帧有观测关系），这里先记录下来，之后调用Replace函数来替换
+                // 这里不能直接替换，原因是需要对地图点加锁后才能替换，否则可能会crash。所以先记录，在加锁后替换
                 if(!pMPinKF->isBad())
                     vpReplacePoint[iMP] = pMPinKF;
             }
@@ -1432,7 +1432,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
  * @param[in] s12               pKF2 到 pKF1 的Sim 变换中的尺度
  * @param[in] R12               pKF2 到 pKF1 的Sim 变换中的旋转矩阵
  * @param[in] t12               pKF2 到 pKF1 的Sim 变换中的平移向量
- * @param[in] th                搜索窗口的倍速
+ * @param[in] th                搜索窗口的倍数
  * @return int                  新增的匹配点对数目
  */
 int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &vpMatches12,
@@ -1733,8 +1733,8 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
     const cv::Mat tlc = Rlw*twc+tlw; 
 
     // 判断前进还是后退
-    const bool bForward = tlc.at<float>(2) > CurrentFrame.mb && !bMono; // 非单目情况，如果Z大于基线，则表示相机明显前进
-    const bool bBackward = -tlc.at<float>(2) > CurrentFrame.mb && !bMono; // 非单目情况，如果-Z小于基线，则表示相机明显后退
+    const bool bForward = tlc.at<float>(2) > CurrentFrame.mb && !bMono;     // 非单目情况，如果Z大于基线，则表示相机明显前进
+    const bool bBackward = -tlc.at<float>(2) > CurrentFrame.mb && !bMono;   // 非单目情况，如果-Z小于基线，则表示相机明显后退
 
     //  Step 3 对于前一帧的每一个地图点，通过相机投影模型，得到投影到当前帧的像素坐标
     for(int i=0; i<LastFrame.N; i++)
@@ -2060,7 +2060,7 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
         }
     }
 
-    // 如果差距太大了,说明次优的非常不好,这里就索性放弃了
+    // 如果差距太大了,说明次优的非常不好,这里就索性放弃了,都置为-1
     if(max2<0.1f*(float)max1)
     {
         ind2=-1;

@@ -140,6 +140,16 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
 }
 
 // 设置进行RANSAC时的参数
+
+
+
+/**
+ * @brief 
+ * 
+ * @param[in] probability 
+ * @param[in] minInliers 
+ * @param[in] maxIterations 
+ */
 void Sim3Solver::SetRansacParameters(double probability, int minInliers, int maxIterations)
 {
     mRansacProb = probability;              // 在当前这些点的匹配关系中,一次采样下面的这么多点(和内点个数相同)时,这些点恰好都是内点的概率
