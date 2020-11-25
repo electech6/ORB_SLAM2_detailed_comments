@@ -13,7 +13,7 @@
 
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
-欢迎 [扫描](https://img-blog.csdnimg.cn/img_convert/8b991fd7399f9445fd594061abb973ff.png)关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
+点击 [扫描](https://img-blog.csdnimg.cn/img_convert/8b991fd7399f9445fd594061abb973ff.png)关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
 
 附部分内容讲解视频：
 
