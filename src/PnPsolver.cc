@@ -59,7 +59,7 @@
 *   either expressed or implied, of the FreeBSD Project
 */
 
-//这里的pnp求解用的是EPnP的算法。
+// 这里的pnp求解用的是EPnP的算法。
 // 参考论文：EPnP:An Accurate O(n) Solution to the PnP problem
 // https://en.wikipedia.org/wiki/Perspective-n-Point
 // http://docs.ros.org/fuerte/api/re_vision/html/classepnp.html
@@ -76,22 +76,22 @@
 // s |v| = |0  fy v0||r21 r22 r23 t2||z|
 //   |1|   |0  0  1 ||r32 r32 r33 t3||1|
 
-// step1:用四个控制点来表达所有的3D点
+// Step 1:用四个控制点来表达所有的3D点
 // p_w = sigma(alphas_j * pctrl_w_j), j从0到4
 // p_c = sigma(alphas_j * pctrl_c_j), j从0到4
 // sigma(alphas_j) = 1,  j从0到4
 
-// step2:根据针孔投影模型
+// Step 2:根据针孔投影模型
 // s * u = K * sigma(alphas_j * pctrl_c_j), j从0到4
 
-// step3:将step2的式子展开, 消去s
+// Step 3:将step2的式子展开, 消去s
 // sigma(alphas_j * fx * Xctrl_c_j) + alphas_j * (u0-u)*Zctrl_c_j = 0
 // sigma(alphas_j * fy * Xctrl_c_j) + alphas_j * (v0-u)*Zctrl_c_j = 0
 
-// step4:将step3中的12未知参数（4个控制点*3维参考点坐标）提成列向量
+// Step 4:将step3中的12未知参数（4个控制点*3维参考点坐标）提成列向量
 // Mx = 0,计算得到初始的解x后可以用Gauss-Newton来提纯得到四个相机坐标系的控制点
 
-// step5:根据得到的p_w和对应的p_c，最小化重投影误差即可求解出R t
+// Step 5:根据得到的p_w和对应的p_c，用ICP求解出R t
 
 
 
@@ -123,14 +123,14 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
     mnIterations(0), mnBestInliers(0), N(0)
 {
     // 根据点数初始化容器的大小
-    mvpMapPointMatches = vpMapPointMatches;
-    mvP2D.reserve(F.mvpMapPoints.size());
-    mvSigma2.reserve(F.mvpMapPoints.size());
-    mvP3Dw.reserve(F.mvpMapPoints.size());
-    mvKeyPointIndices.reserve(F.mvpMapPoints.size());
-    mvAllIndices.reserve(F.mvpMapPoints.size());
+    mvpMapPointMatches = vpMapPointMatches;           //匹配关系
+    mvP2D.reserve(F.mvpMapPoints.size());             //2D特征点
+    mvSigma2.reserve(F.mvpMapPoints.size());          //特征点金字塔层级
+    mvP3Dw.reserve(F.mvpMapPoints.size());            //世界坐标系下的3D点
+    mvKeyPointIndices.reserve(F.mvpMapPoints.size()); //记录被使用特征点在原始特征点容器中的索引，因为有些3D点不一定存在，所以索引是不连续的
+    mvAllIndices.reserve(F.mvpMapPoints.size());      //记录被使用特征点的索引，是连续的
 
-    // 生成地图点和特征点在当前求解器的vector中的下标
+    // 生成地图点、对应2D特征点，记录一些索引坐标
     int idx=0;
     // 遍历给出的每一个地图点
     for(size_t i=0, iend=vpMapPointMatches.size(); i<iend; i++)
@@ -143,14 +143,14 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
             {
                 const cv::KeyPoint &kp = F.mvKeysUn[i];//得到2维特征点, 将KeyPoint类型变为Point2f
 
-                mvP2D.push_back(kp.pt);//存放到mvP2D容器
-                mvSigma2.push_back(F.mvLevelSigma2[kp.octave]);//记录特征点是在哪一层提取出来的
+                mvP2D.push_back(kp.pt);   //存放2维特征点
+                mvSigma2.push_back(F.mvLevelSigma2[kp.octave]);   //记录特征点是在哪一层提取出来的
 
-                cv::Mat Pos = pMP->GetWorldPos();//世界坐标系下的3D点
+                cv::Mat Pos = pMP->GetWorldPos();   //世界坐标系下的3D点
                 mvP3Dw.push_back(cv::Point3f(Pos.at<float>(0),Pos.at<float>(1), Pos.at<float>(2)));
 
-                mvKeyPointIndices.push_back(i);//记录被使用特征点在原始特征点容器中的索引, mvKeyPointIndices是跳跃的
-                mvAllIndices.push_back(idx);//记录被使用特征点的索引, mvAllIndices是连续的
+                mvKeyPointIndices.push_back(i); //记录被使用特征点在原始特征点容器中的索引, mvKeyPointIndices是跳跃的
+                mvAllIndices.push_back(idx);    //记录被使用特征点的索引, mvAllIndices是连续的
 
                 idx++;
             }
@@ -177,12 +177,21 @@ PnPsolver::~PnPsolver()
   delete [] pcs;
 }
 
-// 设置RANSAC迭代的参数
+
+/**
+ * @brief 设置RANSAC迭代的参数
+ * @param[in] probability       用于计算RANSAC理论迭代次数所用的概率
+ * @param[in] minInliers        退出RANSAC所需要的最小内点个数, 注意这个只是给定值,最终迭代的时候不一定按照这个来
+ * @param[in] maxIterations     设定的最大RANSAC迭代次数
+ * @param[in] minSet            表示求解这个问题所需要的最小的样本数目,简称最小集;参与到最小内点数的确定过程中，默认是4
+ * @param[in] epsilon           希望得到的 内点数/总体数 的比值,参与到最小内点数的确定过程中
+ * @param[in] th2               内外点判定时的距离的baseline(程序中还会根据特征点所在的图层对这个阈值进行缩放的)
+ */
 void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxIterations, int minSet, float epsilon, float th2)
 {
     // 注意这次里在每一次采样的过程中,需要采样四个点,即最小集应该设置为4
 
-    // step 1 获取给定的参数
+    // Step 1 获取给定的参数
     mRansacProb = probability;
     mRansacMinInliers = minInliers;
     mRansacMaxIts = maxIterations;
@@ -190,7 +199,7 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     mRansacMinSet = minSet;           
 
 
-    // step 2 计算理论内点数,并且选 min(给定内点数,最小集,理论内点数) 作为最终在迭代过程中使用的最小内点数
+    // Step 2 计算理论内点数,并且选 min(给定内点数,最小集,理论内点数) 作为最终在迭代过程中使用的最小内点数
     N = mvP2D.size(); // number of correspondences, 所有二维特征点个数
 
     mvbInliersi.resize(N);// inlier index, mvbInliersi记录每次迭代inlier的点
@@ -205,13 +214,13 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
         nMinInliers=minSet;
     mRansacMinInliers = nMinInliers;
 
-    // step 3 根据敲定的"最小内点数"来调整 内点数/总体数 这个比例 epsilon
+    // Step 3 根据敲定的"最小内点数"来调整 内点数/总体数 这个比例 epsilon
 
     // 这个变量却是希望取得高一点,也可以理解为想让和调整之后的内点数 mRansacMinInliers 保持一致吧
     if(mRansacEpsilon<(float)mRansacMinInliers/N)
         mRansacEpsilon=(float)mRansacMinInliers/N;
 
-    // step 4  根据给出的各种参数计算RANSAC的理论迭代次数,并且敲定最终在迭代过程中使用的RANSAC最大迭代次数
+    // Step 4  根据给出的各种参数计算RANSAC的理论迭代次数,并且敲定最终在迭代过程中使用的RANSAC最大迭代次数
     // Set RANSAC iterations according to probability, epsilon, and max iterations -- 这个部分和Sim3Solver中的操作是一样的
     int nIterations;
 
@@ -222,7 +231,7 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
 
     mRansacMaxIts = max(1,min(nIterations,mRansacMaxIts));
 
-    // step 5 计算不同图层上的特征点在进行内点检验的时候,所使用的不同判断误差阈值
+    // Step 5 计算不同图层上的特征点在进行内点检验的时候,所使用的不同判断误差阈值
 
     mvMaxError.resize(mvSigma2.size());// 图像提取特征的时候尺度层数
     for(size_t i=0; i<mvSigma2.size(); i++)// 不同的尺度，设置不同的最大偏差
@@ -252,9 +261,10 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
     vbInliers.clear();
     nInliers=0;             // 当前次迭代时的内点数
 
-    // mRansacMinSet 为每次RANSAC需要的特征点数，默认为4组3D-2D对应点,这里的操作是告知原EPnP代码
+    // mRansacMinSet 为每次RANSAC需要的特征点数，默认为4组3D-2D对应点
     set_maximum_number_of_correspondences(mRansacMinSet);
 
+    // 如果已有匹配点数目比要求的内点数目还少，直接退出
     // N为所有2D点的个数, mRansacMinInliers 为正常退出RANSAC迭代过程中最少的inlier数
     if(N<mRansacMinInliers)
     {
@@ -283,6 +293,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
+        // 随机选取4组（默认数目）最小集合
         for(short i = 0; i < mRansacMinSet; ++i)
         {
             int randi = DUtils::Random::RandomInt(0, vAvailableIndices.size()-1);
@@ -303,7 +314,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         compute_pose(mRi, mti);
 
         // Check inliers
-        // 内点外点的检查
+        // 通过之前求解的位姿来进行3D-2D投影，统计内点数目
         CheckInliers();
 
         // 如果当前次迭代得到的内点数已经达到了合格的要求了
@@ -367,7 +378,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         }
     }
 
-    // 如果也没有好的计算结果,只好说明迭代失败咯...
+    // 如果也没有好的计算结果,只好说明迭代失败
     return cv::Mat();
 }
 
@@ -426,7 +437,10 @@ bool PnPsolver::Refine()
     return false;
 }
 
-// 通过之前求解的(R t)检查哪些3D-2D点对属于inliers
+/**
+ * @brief 通过之前求解的位姿来进行3D-2D投影，统计内点数目
+ * 
+ */
 void PnPsolver::CheckInliers()
 {
     mnInliersi=0;
@@ -447,7 +461,7 @@ void PnPsolver::CheckInliers()
         double ue = uc + fu * Xc * invZc;
         double ve = vc + fv * Yc * invZc;
 
-        // 计算残差大小
+        // 计算特征点和投影点的残差大小
         float distX = P2D.x-ue;
         float distY = P2D.y-ve;
 
@@ -465,19 +479,21 @@ void PnPsolver::CheckInliers()
         }
     }
 }
+/**
+ * @brief 设置EPnP 相关的参数
+ * 
+ * @param[in] n     EPnP 最小集合数目，默认是4
+ */
 
-// number_of_correspondences为RANSAC每次PnP求解时时3D点和2D点匹配对数
-// RANSAC需要很多次，maximum_number_of_correspondences为匹配对数最大值
-// 这个变量用于决定pws us alphas pcs容器的大小，因此只能逐渐变大不能减小
-// 如果maximum_number_of_correspondences之前设置的过小，则重新设置，并重新初始化pws us alphas pcs的大小
-// ↑ 泡泡机器人注释原文
-// To sum up: 这部分相当于是 ORB的代码和EPnP代码的一个"接口",设置最小集以及有关的参数
 void PnPsolver::set_maximum_number_of_correspondences(int n)
 {
-  // 如果当前的这个变量,小于最小集,
+  // 设置最小集以及有关的参数
+  // number_of_correspondences为RANSAC每次PnP求解时时3D点和2D点匹配对数
+  // RANSAC需要很多次，maximum_number_of_correspondences为匹配对数最大值
+  // 这个变量用于决定pws us alphas pcs容器的大小，因此只能逐渐变大不能减小
+  // 如果maximum_number_of_correspondences之前设置的过小，则重新设置，并重新初始化pws us alphas pcs的大小
+  // 如果当前的这个变量,小于最小集4，就释放之前创建的数组
   if (maximum_number_of_correspondences < n) {
-    // 那么就先释放之前创建的数组 (NOTE 看到这里终于明白为什么在构造函数中这四个指针要先赋值为0了)
-    // ? 提问:ORB中使用到的这段代码是别人写的, 而且从这些处理手法上来看非常拙劣, 那开源协议是否允许我们重构这部分代码?
     if (pws != 0) delete [] pws;
     if (us != 0) delete [] us;
     if (alphas != 0) delete [] alphas;
@@ -498,7 +514,15 @@ void PnPsolver::reset_correspondences(void)
   number_of_correspondences = 0;
 }
 
-// 将给定的3D,2D点的数据压入到数组中
+/**
+ * @brief 将给定的3D,2D点的数据压入到数组中
+ * 
+ * @param[in] X       3D点X坐标
+ * @param[in] Y       3D点Y坐标
+ * @param[in] Z       3D点Z坐标
+ * @param[in] u       3D点对应2D点的横坐标
+ * @param[in] v       3D点对应2D点的纵坐标
+ */
 void PnPsolver::add_correspondence(double X, double Y, double Z, double u, double v)
 {
   pws[3 * number_of_correspondences    ] = X;
@@ -512,80 +536,87 @@ void PnPsolver::add_correspondence(double X, double Y, double Z, double u, doubl
   number_of_correspondences++;
 }
 
-// 从给定的匹配点中计算出四个控制点(控制点的概念参考EPnP原文)
+/**
+ * @brief 从给定的匹配点中计算出四个控制点
+ * 
+ */
 void PnPsolver::choose_control_points(void)
 {
   // Take C0 as the reference points centroid:
-  // step 1：第一个控制点：参与PnP计算的参考3D点的几何中心
+  // Step 1：第一个控制点：参与PnP计算的参考3D点的质心（均值）
+  // cws[4][3] 存储控制点在世界坐标系下的坐标，第一维表示是哪个控制点，第二维表示是哪个坐标(x,y,z)
+  // 计算前先把第1个控制点坐标清零
   cws[0][0] = cws[0][1] = cws[0][2] = 0;
-  // 遍历每个匹配点中的3D点，然后对每个坐标轴加和
+
+  // 遍历每个匹配点中世界坐标系3D点，然后对每个坐标轴加和
+  // number_of_correspondences 默认是 4
   for(int i = 0; i < number_of_correspondences; i++)
     for(int j = 0; j < 3; j++)
       cws[0][j] += pws[3 * i + j];
+
   // 再对每个轴上取均值
   for(int j = 0; j < 3; j++)
     cws[0][j] /= number_of_correspondences;
 
 
   // Take C1, C2, and C3 from PCA on the reference points:
-  // step 2：计算其它三个控制点，C1, C2, C3通过PCA分解得到
-  // TODO 
+  // Step 2：计算其它三个控制点，C1, C2, C3通过特征值分解得到
   // ref: https://www.zhihu.com/question/38417101
   // ref: https://yjk94.wordpress.com/2016/11/11/pca-to-layman/
 
-  // 将所有的3D参考点写成矩阵，(number_of_correspondences * ３)的矩阵
+  // 将所有的3D参考点写成矩阵，(number_of_correspondences * 3)的矩阵
   CvMat * PW0 = cvCreateMat(number_of_correspondences, 3, CV_64F);
 
   double pw0tpw0[3 * 3], dc[3], uct[3 * 3];         // 下面变量的数据区
-  CvMat PW0tPW0 = cvMat(3, 3, CV_64F, pw0tpw0);     // 如变量名所示.其实这里使用cv::Mat格式主要是为了进行SVD分解
-  CvMat DC      = cvMat(3, 1, CV_64F, dc);          // 分解上面矩阵得到的奇异值组成的矩阵
-  CvMat UCt     = cvMat(3, 3, CV_64F, uct);         // 分解上面矩阵得到的左奇异矩阵
+  CvMat PW0tPW0 = cvMat(3, 3, CV_64F, pw0tpw0);     // PW0^T * PW0，为了进行特征值分解
+  CvMat DC      = cvMat(3, 1, CV_64F, dc);          // 特征值
+  CvMat UCt     = cvMat(3, 3, CV_64F, uct);         // 特征向量
 
-  // step 2.1：将存在pws中的参考3D点减去第一个控制点的坐标（相当于把第一个控制点作为原点）, 并存入PW0
+  // Step 2.1：将存在pws中的参考3D点减去第一个控制点(均值中心)的坐标（相当于把第一个控制点作为原点）, 并存入PW0
   for(int i = 0; i < number_of_correspondences; i++)
     for(int j = 0; j < 3; j++)
       PW0->data.db[3 * i + j] = pws[3 * i + j] - cws[0][j];
 
-  // step 2.2：利用SVD分解P'P可以获得P的主分量
-  // 类似于齐次线性最小二乘求解的过程，
-  // PW0的转置乘以PW0
-  // cvMulTransposed(A_src,Res_dst,order, delta=null,scale=1): Calculates Res=(A-delta)*(A-delta)^T (order=0) or (A-delta)^T*(A-delta) (order=1)
+  // Step 2.2：利用特征值分解得到三个主方向
+  // PW0^T * PW0
+  // cvMulTransposed(A_src,Res_dst,order, delta=null,scale=1): 
+  // Calculates Res=(A-delta)*(A-delta)^T (order=0) or (A-delta)^T*(A-delta) (order=1)
   cvMulTransposed(PW0, &PW0tPW0, 1);
+
+  // 这里实际是特征值分解
   cvSVD(&PW0tPW0,                         // A
-        &DC,                              // W
-        &UCt,                             // U
+        &DC,                              // W，实际是特征值
+        &UCt,                             // U，实际是特征向量
         0,                                // V
         CV_SVD_MODIFY_A | CV_SVD_U_T);    // flags
 
   cvReleaseMat(&PW0);
 
-  // step 2.3：得到C1, C2, C3三个3D控制点，最后加上之前减掉的第一个控制点这个偏移量
-  // 讲道理这里的条件不应写成4,而应该是变量 number_of_correspondences 啊
+  // Step 2.3：得到C1, C2, C3三个3D控制点，最后加上之前减掉的第一个控制点这个偏移量
+  // ?这里的循环次数不应写成4,而应该是变量 number_of_correspondences
   for(int i = 1; i < 4; i++) {
-    // 这里也是只有前三个奇异值 
+    // 这里只需要遍历后面3个控制点
     double k = sqrt(dc[i - 1] / number_of_correspondences);
     for(int j = 0; j < 3; j++)
-      //? 但是这里为什么要乘k？
       cws[i][j] = cws[0][j] + k * uct[3 * (i - 1) + j];
   }
 }
 
-// 求解四个控制点的系数alphas
-// 每一个3D控制点，都有一组alphas与之对应
-// cws1 cws2 cws3 cws4为四个控制点的坐标
-// pws为3D参考点的坐标
-// (a2 a3 a4)' = inverse(cws2-cws1 cws3-cws1 cws4-cws1)*(pws-cws1)，a1 = 1-a2-a3-a4
-// 四个控制点相当于确定了一个子坐标系,原点是c1,另外三个轴的非单位向量是cws2-cws1 cws3-cws1 cws4-cws1
-// 上式中 pws-cws1 是当前遍历的空间点到控制点1的距离(三维向量)(也就是到这个子坐标系原点的距离),然后投影到这个子坐标系的三个轴上,并且使用这三个"轴向量"的长度来表示
-// 最后a1要将这个坐标形成 4x1 的齐次坐标表达形式 -- 齐次坐标的表示也是这么来的
+/**
+ * @brief 求解世界坐标系下四个控制点的系数alphas，在相机坐标系下系数不变
+ * 
+ */
 void PnPsolver::compute_barycentric_coordinates(void)
 {
+  // pws为世界坐标系下3D参考点的坐标
+  // cws1 cws2 cws3 cws4为世界坐标系下四个控制点的坐标
+  // alphas 四个控制点的系数，每一个pws，都有一组alphas与之对应
   double cc[3 * 3], cc_inv[3 * 3];
-  CvMat CC     = cvMat(3, 3, CV_64F, cc);       // 另外三个控制点在控制点坐标系下的坐标
+  CvMat CC     = cvMat(3, 3, CV_64F, cc);       // 除第1个控制点外，另外3个控制点在控制点坐标系下的坐标
   CvMat CC_inv = cvMat(3, 3, CV_64F, cc_inv);   // 上面这个矩阵的逆矩阵
 
-  // 第一个控制点在质心的位置，后面三个控制点减去第一个控制点的坐标（以第一个控制点为原点）
-  // step 1：减去质心后得到x y z轴
+  // Step 1：第一个控制点在质心的位置，后面三个控制点减去第一个控制点的坐标（以第一个控制点为原点）
+  // 减去质心后得到x y z轴
   // 
   // cws的排列 |cws1_x cws1_y cws1_z|  ---> |cws1|
   //          |cws2_x cws2_y cws2_z|       |cws2|
@@ -595,9 +626,11 @@ void PnPsolver::compute_barycentric_coordinates(void)
   // cc的排列  |cc2_x cc3_x cc4_x|  --->|cc2 cc3 cc4|
   //          |cc2_y cc3_y cc4_y|
   //          |cc2_z cc3_z cc4_z|
+
+  // 将后面3个控制点cws 去重心后 转化为 cc
   for(int i = 0; i < 3; i++)                      // x y z 轴
     for(int j = 1; j < 4; j++)                    // 哪个控制点
-      cc[3 * i + j - 1] = cws[j][i] - cws[0][i];  // 坐标索引中的-1是考虑到跳过了最初的控制点0
+      cc[3 * i + j - 1] = cws[j][i] - cws[0][i];  // 坐标索引中的-1是考虑到跳过了第1个控制点0
 
   cvInvert(&CC, &CC_inv, CV_SVD);
   double * ci = cc_inv;
@@ -605,8 +638,8 @@ void PnPsolver::compute_barycentric_coordinates(void)
     double * pi = pws + 3 * i;                    // pi指向第i个3D点的首地址
     double * a = alphas + 4 * i;                  // a指向第i个控制点系数alphas的首地址
 
-    // pi[]-cws[0][]表示将pi和步骤1进行相同的平移
-    // 生成a2,a3,a4
+    // pi[]-cws[0][]表示去质心
+    // a0,a1,a2,a3 对应的是四个控制点的齐次重心坐标
     for(int j = 0; j < 3; j++)
       // +1 是因为跳过了a0
       /*    这里的原理基本上是这个样子：(这里公式的下标和程序中的不一样，是从1开始的)
@@ -624,15 +657,14 @@ void PnPsolver::compute_barycentric_coordinates(void)
   } // 遍历每一个匹配点
 }
 
-// 填充最小二乘的M矩阵
-// 对每一个3D参考点：
-// |ai1 0    -ai1*ui, ai2  0    -ai2*ui, ai3 0   -ai3*ui, ai4 0   -ai4*ui|
-// |0   ai1  -ai1*vi, 0    ai2  -ai2*vi, 0   ai3 -ai3*vi, 0   ai4 -ai4*vi|
-// 其中i从0到4 -- //? 这里师兄写错了吧!!!! 是j从0到4,但是上面已经完善了
-// 应该是这个样子:
-// |ai1*fu, 0,      ai1(uc-ui),|  ai2*fu, 0,      ai2(uc-ui),|  ai3*fu, 0,      ai3(uc-ui),|  ai4*fu, 0,      ai4(uc-ui)| 
-// |0,      ai1*fv, ai1(vc-vi),|  0,      ai2*fv, ai2(vc-vi),|  0,      ai3*fv, ai3(vc-vi),|  0,      ai4*fv, ai4(vc-vi)|
-// 每一个特征点i有两行,每一行根据j=1,2,3,4可以分成四个部分,这也就是下面的for循环中所进行的工作
+/**
+ * @brief 根据提供的每一对点的数据来填充矩阵 M. 每对匹配点的数据可以填充两行
+ * @param[in] M                cvMat对应,存储矩阵M
+ * @param[in] row              开始填充数据的行
+ * @param[in] alphas           世界坐标系下3D点用4个虚拟控制点表达时的4个系数
+ * @param[in] u                2D点坐标u
+ * @param[in] v                2D点坐标v
+ */
 void PnPsolver::fill_M(CvMat * M,
 		  const int row, const double * as, const double u, const double v)
 {
@@ -641,7 +673,10 @@ void PnPsolver::fill_M(CvMat * M,
   // 第二行起点
   double * M2 = M1 + 12;
 
-  // 
+  // 对每一个参考点对：
+  // |ai1*fu, 0,      ai1(uc-ui),|  ai2*fu, 0,      ai2(uc-ui),|  ai3*fu, 0,      ai3(uc-ui),|  ai4*fu, 0,      ai4(uc-ui)| 
+  // |0,      ai1*fv, ai1(vc-vi),|  0,      ai2*fv, ai2(vc-vi),|  0,      ai3*fv, ai3(vc-vi),|  0,      ai4*fv, ai4(vc-vi)|
+  // 每一个特征点i有两行,每一行根据j=1,2,3,4可以分成四个部分,这也就是下面的for循环中所进行的工作
   for(int i = 0; i < 4; i++) {
     M1[3 * i    ] = as[i] * fu;
     M1[3 * i + 1] = 0.0;
@@ -653,15 +688,18 @@ void PnPsolver::fill_M(CvMat * M,
   }
 }
 
-// 每一个控制点在相机坐标系下都表示为特征向量乘以beta的形式，EPnP论文的公式16
-// 这里是是计算控制点在相机坐标系下的坐标
+/**
+ * @brief 通过给出的beta和vi,计算控制点在相机坐标系下的坐标
+ * @param[in] betas       beta
+ * @param[in] ut          其实是vi
+ */
 void PnPsolver::compute_ccs(const double * betas, const double * ut)
 {
-  // step 1 赋值初始值为0
+  // Step 1 赋值初始值为0
   for(int i = 0; i < 4; i++)
     ccs[i][0] = ccs[i][1] = ccs[i][2] = 0.0f;
 
-  // step 2 
+  // Step 2 
   for(int i = 0; i < 4; i++) {
     // 注意这里传过来的向量ut中,最后的部分才是v,依次是  x  x  x  ... x v4 v3 v2 v1
     // 这里就是在最后面一次取出 v1 ~ v4
@@ -673,8 +711,10 @@ void PnPsolver::compute_ccs(const double * betas, const double * ut)
   }
 }
 
-// 计算用四个控制点作为单位向量表示下的世界坐标系下3D点的坐标
-// 过程可以参考 https://blog.csdn.net/jessecw79/article/details/82945918
+/**
+ * @brief 根据相机坐标系下控制点坐标ccs 和控制点系数 alphas（通过世界坐标系下3D点计算得到），得到相机坐标系下3D点坐标 pcs
+ * 过程可以参考 https://blog.csdn.net/jessecw79/article/details/82945918
+ */
 void PnPsolver::compute_pcs(void)
 {
   // 遍历所有的空间点
@@ -689,35 +729,44 @@ void PnPsolver::compute_pcs(void)
   }
 }
 
-// 根据类成员变量中给出的匹配点,计算相机位姿
+/**
+ * @brief 使用EPnP算法计算相机的位姿.其中匹配点的信息由类的成员函数给定 
+ * @param[out] R    旋转
+ * @param[out] T    平移
+ * @return double   使用这对旋转和平移的时候, 匹配点对的平均重投影误差
+ */
 double PnPsolver::compute_pose(double R[3][3], double t[3])
 {
-  // step 1：获得EPnP算法中的四个控制点
+  // Step 1：获得EPnP算法中的四个控制点
   choose_control_points();
-  // step 2：计算世界坐标系下每个3D点用4个控制点线性表达时的系数alphas，公式1
+
+  // Step 2：计算世界坐标系下每个3D点用4个控制点线性表达时的系数alphas
   compute_barycentric_coordinates();
 
-  // step 3：构造M矩阵，EPnP原始论文中公式(3)(4)-->(5)(6)(7); 矩阵的大小为 2n*12 ,n 为使用的匹配点的对数
+  // Step 3：构造M矩阵，EPnP原始论文中公式(3)(4)-->(5)(6)(7); 矩阵的大小为 2n*12 ,n 为使用的匹配点的对数
   CvMat * M = cvCreateMat(2 * number_of_correspondences, 12, CV_64F);
 
   // 根据每一对匹配点的数据来填充矩阵M中的数据
+  // alphas:  世界坐标系下3D点用4个虚拟控制点表达时的系数
+  // us:      图像坐标系下的2D点坐标
   for(int i = 0; i < number_of_correspondences; i++)
     fill_M(M, 2 * i, alphas + 4 * i, us[2 * i], us[2 * i + 1]);
 
   double mtm[12 * 12], d[12], ut[12 * 12];
   CvMat MtM = cvMat(12, 12, CV_64F, mtm);
-  CvMat D   = cvMat(12,  1, CV_64F, d);     // 奇异值
-  CvMat Ut  = cvMat(12, 12, CV_64F, ut);    // 左奇异向量
+  CvMat D   = cvMat(12,  1, CV_64F, d);     // 这里实际是特征值
+  CvMat Ut  = cvMat(12, 12, CV_64F, ut);    // 这里实际是特征向量
 
-  // step 4：求解Mx = 0
+  // Step 4：求解Mx = 0
 
-  // step 4.1 先计算其中的特征向量vi
-  // SVD分解M'M
+  // Step 4.1 先计算其中的特征向量vi
+  // 求M'M
   cvMulTransposed(M, &MtM, 1);
-  cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T);//得到向量ut -- 其实就是EPnP论文式(8)中的vi
+  // 该函数实际是特征值分解，得到特征值D，特征向量ut，对应EPnP论文式(8)中的vi
+  cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T); 
   cvReleaseMat(&M);
 
-  // step 4.2 计算分情况讨论的时候需要用到的矩阵L和\rho
+  // Step 4.2 计算分情况讨论的时候需要用到的矩阵L和\rho
   // EPnP论文中式13中的L和\rho
   double l_6x10[6 * 10], rho[6];
   CvMat L_6x10 = cvMat(6, 10, CV_64F, l_6x10);
@@ -728,9 +777,9 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   compute_rho(rho);
 
 
-  // step 4.3 分情况计算N=2,3,4时能够求解得到的相机位姿R,t并且得到平均重投影误差
+  // Step 4.3 分情况计算N=2,3,4时能够求解得到的相机位姿R,t并且得到平均重投影误差
   double Betas[4][4],         // 本质上就四个beta1~4,但是这里有四种情况(第一维度表示)
-         rep_errors[4];       //? 迭代误差? 重投影误差?
+         rep_errors[4];       // 重投影误差
   double Rs[4][3][3],         //每一种情况迭代优化后得到的旋转矩阵
          ts[4][3];            //每一种情况迭代优化后得到的平移向量
 
@@ -738,36 +787,42 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   // 通过优化得到剩下的 betas
   // 最后计算R t
 
-  // EPnP论文公式10 15 
-  // N=4的情况
+
+  // 求解近似解：N=4的情况
   find_betas_approx_1(&L_6x10, &Rho, Betas[1]);
+  // 高斯牛顿法迭代优化得到 beta
   gauss_newton(&L_6x10, &Rho, Betas[1]);
   rep_errors[1] = compute_R_and_t(ut, Betas[1], Rs[1], ts[1]);   // 注意是每对匹配点的平均的重投影误差
 
-  // EPnP论文公式11 15 
-  // 对应N=2的情况
+  // 求解近似解：N=2的情况
   find_betas_approx_2(&L_6x10, &Rho, Betas[2]);
   gauss_newton(&L_6x10, &Rho, Betas[2]);
   rep_errors[2] = compute_R_and_t(ut, Betas[2], Rs[2], ts[2]);
 
-  // 对应为N=3的情况
+  // 求解近似解：N=3的情况
   find_betas_approx_3(&L_6x10, &Rho, Betas[3]);
   gauss_newton(&L_6x10, &Rho, Betas[3]);
   rep_errors[3] = compute_R_and_t(ut, Betas[3], Rs[3], ts[3]);
 
-  // step 5 看看哪种情况得到的效果最好,然后就选哪个
+  // Step 5 看看哪种情况得到的效果最好,然后就选哪个
   int N = 1;    // trick , 这样可以减少一种情况的计算
   if (rep_errors[2] < rep_errors[1]) N = 2;
   if (rep_errors[3] < rep_errors[N]) N = 3;
 
-  // step 6 收尾,将计算结果保存到返回计算结果用的变量中
+  // Step 6 将最佳计算结果保存到返回计算结果用的变量中
   copy_R_and_t(Rs[N], ts[N], R, t);
 
-  // step 7 并且返回平均匹配点对的重投影误差,作为对相机位姿估计的评价
+  // Step 7 并且返回平均匹配点对的重投影误差,作为对相机位姿估计的评价
   return rep_errors[N];
 }
 
-// 复制计算得到的位姿到另外的一组变量中
+/**
+ * @brief 复制计算得到的位姿到另外的一组变量中
+ * @param[in]  R_dst 
+ * @param[in]  t_dst 
+ * @param[out] R_src 
+ * @param[out] t_src 
+ */
 void PnPsolver::copy_R_and_t(const double R_src[3][3], const double t_src[3],
 			double R_dst[3][3], double t_dst[3])
 {
@@ -795,7 +850,12 @@ double PnPsolver::dot(const double * v1, const double * v2)
   return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
 
-// 计算在给定相机位姿的时候的3D点投影误差
+/**
+ * @brief 计算在给定位姿的时候的3D点投影误差
+ * @param[in] R      给定旋转
+ * @param[in] t      给定平移
+ * @return double    重投影误差,是平均到每一对匹配点上的误差
+ */
 double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
 {
   // 统计其实并不是平方
@@ -821,10 +881,14 @@ double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
   return sum2 / number_of_correspondences;
 }
 
-// 根据世界坐标系下的四个控制点与机体坐标下对应的四个控制点（和世界坐标系下四个控制点相同尺度），求取R t
+/**
+ * @brief 用3D点在世界坐标系和相机坐标系下对应的坐标，用ICP求取R t
+ * @param[out] R   旋转
+ * @param[out] t   平移
+ */
 void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
 {
-  // step 1 计算3D点的质心
+  // Step 1 计算3D点的质心
   double pc0[3],                                              //3D点世界坐标系下坐标的质心
          pw0[3];                                              //3D点相机坐标系下坐标的质心
   // 初始化这两个质心
@@ -853,7 +917,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
   CvMat ABt_U = cvMat(3, 3, CV_64F, abt_u);     // 奇异值分解得到的左特征矩阵
   CvMat ABt_V = cvMat(3, 3, CV_64F, abt_v);     // 奇异值分解得到的右特征矩阵
 
-  // step 2 构造矩阵H=B^T*A,不过这里是隐含的构造
+  // Step 2 构造矩阵H=B^T*A,不过这里是隐含的构造
   cvSetZero(&ABt);
   // 遍历每一个3D点
   for(int i = 0; i < number_of_correspondences; i++) {
@@ -869,10 +933,10 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
     }
   }
 
-  // step 3 对得到的H矩阵进行奇异值分解
+  // Step 3 对得到的H矩阵进行奇异值分解
   cvSVD(&ABt, &ABt_D, &ABt_U, &ABt_V, CV_SVD_MODIFY_A);
 
-  // step 4 R=U*V^T, 并且进行合法性检查
+  // Step 4 R=U*V^T, 并且进行合法性检查
   for(int i = 0; i < 3; i++)
     for(int j = 0; j < 3; j++)
       R[i][j] = dot(abt_u + 3 * i, abt_v + 3 * j);
@@ -888,7 +952,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
     R[2][2] = -R[2][2];
   }
 
-  // step 5 t就这么算
+  // Step 5 根据R计算t
   t[0] = pc0[0] - dot(R[0], pw0);
   t[1] = pc0[1] - dot(R[1], pw0);
   t[2] = pc0[2] - dot(R[2], pw0);
@@ -922,37 +986,53 @@ void PnPsolver::solve_for_sign(void)
   }
 }
 
-// 根据已经得到的控制点在当前相机坐标系下的坐标来恢复出相机的位姿
+
+/**
+ * @brief 根据已经得到的控制点在当前相机坐标系下的坐标来恢复出相机的位姿
+ * @param[in]  ut         vi
+ * @param[in]  betas      betas
+ * @param[out] R          计算得到的相机旋转R
+ * @param[out] t          计算得到的相机位置t
+ * @return double         使用这个位姿,所得到的重投影误差
+ */
 double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
 			     double R[3][3], double t[3])
 {
-  // step 1 根据前面的计算结果来"组装"得到控制点在当前相机坐标系下的坐标
+  // Step 1 根据前面的计算结果来"组装"得到控制点在当前相机坐标系下的坐标
   compute_ccs(betas, ut);
-  // step 2 将世界坐标系下的3D点的坐标转换到控制点的坐标系下
+  // Step 2 将世界坐标系下的3D点的坐标转换到控制点的坐标系下
   compute_pcs();
-  // step 3 调整点坐标的符号,来保证在相机坐标系下点的深度为正
+  // Step 3 调整点坐标的符号,来保证在相机坐标系下点的深度为正
   solve_for_sign();
 
-  // step 4 然后就是计算R和t 
+  // Step 4 ICP计算R和t 
   estimate_R_and_t(R, t);
 
-  // step 5 计算使用这个位姿,所得到的每对点平均的重投影误差,并且返回
+  // Step 5 计算使用这个位姿,所得到的每对点平均的重投影误差,作为返回值
   return reprojection_error(R, t);
 }
 
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]  -- L_6x10中每一行的内容
-// betas_approx_1 = [B11 B12     B13         B14            ]  -- L_6x4 中一行提取出来的内容
-// 对应N=4的情况,其实和想象中有些不一样
+/**
+ * @brief 计算N=4时候的粗糙近似解，暴力将其他量置为0
+ * 
+ * @param[in]  L_6x10  矩阵L
+ * @param[in]  Rho     非齐次项 \rho, 列向量
+ * @param[out] betas   计算得到的beta
+ */
 void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
+  // 计算N=4时候的粗糙近似解，暴力将其他量置为0
+  // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]  -- L_6x10中每一行的内容
+  // betas_approx_1 = [B11 B12     B13         B14            ]  -- L_6x4 中一行提取出来的内容
+
   double l_6x4[6 * 4], b4[4];
   CvMat L_6x4 = cvMat(6, 4, CV_64F, l_6x4);
   CvMat B4    = cvMat(4, 1, CV_64F, b4);
 
-  // 提取完整L矩阵中当前计算需要的的内容;分6行依次提取
+  // 提取L_6x10矩阵中每行的第0,1,3,6个元素，得到L_6x4
   for(int i = 0; i < 6; i++) {
-    cvmSet(&L_6x4, i, 0, cvmGet(L_6x10, i, 0));
+    cvmSet(&L_6x4, i, 0, cvmGet(L_6x10, i, 0)); //将L_6x10的第i行的第0个元素设置为L_6x4的第i行的第0个元素
     cvmSet(&L_6x4, i, 1, cvmGet(L_6x10, i, 1));
     cvmSet(&L_6x4, i, 2, cvmGet(L_6x10, i, 3));
     cvmSet(&L_6x4, i, 3, cvmGet(L_6x10, i, 6));
@@ -973,13 +1053,19 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
     betas[3] = b4[3] / betas[0];
   }
 }
-
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
-// betas_approx_2 = [B11 B12 B22                            ]
-// 对应N=2的情况
+                       ]
+/**
+ * @brief 计算N=2时候的粗糙近似解，暴力将其他量置为0
+ * 
+ * @param[in]  L_6x10  矩阵L
+ * @param[in]  Rho     非齐次项 \rho, 列向量
+ * @param[out] betas   计算得到的beta
+ */
 void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
+  // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
+  // betas_approx_2 = [B11 B12 B22                            ] 
   double l_6x3[6 * 3], b3[3];
   CvMat L_6x3  = cvMat(6, 3, CV_64F, l_6x3);
   CvMat B3     = cvMat(3, 1, CV_64F, b3);
@@ -1010,12 +1096,19 @@ void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
   betas[3] = 0.0;
 }
 
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
-// betas_approx_3 = [B11 B12 B22 B13 B23                    ]
-// 对应N=3的情况
+
+/**
+ * @brief 计算N=3时候的粗糙近似解，暴力将其他量置为0
+ * 
+ * @param[in]  L_6x10  矩阵L
+ * @param[in]  Rho     非齐次项 \rho, 列向量
+ * @param[out] betas   计算得到的beta
+ */
 void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
+  // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
+  // betas_approx_3 = [B11 B12 B22 B13 B23                    ]
   double l_6x5[6 * 5], b5[5];
   CvMat L_6x5 = cvMat(6, 5, CV_64F, l_6x5);
   CvMat B5    = cvMat(5, 1, CV_64F, b5);
@@ -1047,13 +1140,19 @@ void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
   betas[3] = 0.0;
 }
 
-// 计算并填充矩阵L
+/**
+ * @brief 计算矩阵L,论文式13中的L矩阵,不过这里的是按照N=4的时候计算的
+ * 
+ * @param[in]  ut               特征值分解之后得到的12x12特征矩阵
+ * @param[out] l_6x10           计算的L矩阵结果，维度6x10 
+ */
 void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
 {
+  // Step 1 获取最后4个零特征值对应的4个12x1的特征向量
   const double * v[4];
 
-  // 分别指向左奇异值矩阵的后四行,因为考虑到仿射相机模型时N=4,有四个向量v[0]~v[3],这几个向量的值就从这里提取出来;
-  // 其中的灭一个向量v[i]都有一个完整的,差了一个系数\beta[i]的控制点在相机坐标系下的坐标的估计v[i]^[0]~v[i]^[3]
+  // 对应EPnP里N=4的情况。直接取特征向量的最后4行
+  // 以这里的v[0]为例，它是12x1的向量，会拆成4个3x1的向量v[0]^[0]，v[0]^[1]，v[0]^[1]，v[0]^[3]，对应4个相机坐标系控制点
   v[0] = ut + 12 * 11;    // v[0] : v[0][0]~v[0][2]  => v[0]^[0]  , * \beta_0 = c0  (理论上)
                           //        v[0][3]~v[0][5]  => v[0]^[1]  , * \beta_0 = c1 
                           //        v[0][6]~v[0][8]  => v[0]^[2]  , * \beta_0 = c2
@@ -1062,24 +1161,21 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
   v[2] = ut + 12 *  9;
   v[3] = ut + 12 *  8;
 
-  // 计算"v差"的中间变量,和EPnP论文中式(12)有关
-  // 4-最多四个向量v 6-四对点一共有六中两两组合的方式 3-得到的差是一个三维的列向量
+  // Step 2 提前计算中间变量dv 
+  // dv表示中间变量，是difference-vector的缩写
+  // 4 表示N=4时对应的4个12x1的向量v, 6 表示4对点一共有6种两两组合的方式，3 表示v^[i]是一个3维的列向量
   double dv[4][6][3];
 
-  // ! 下面这一段的注释是错误的,不要看
-  // N=2时: beta11 beta12 beta22
-  // N=3时: beta11 beta12 beta13 beta22 beta23 beta33
-  // N=4时: beta11 beta12 beta13 beta14 beta22 beta23 beta24 beta33 beta34 beta44
-  // 为了方便我们这里直接生成N=4时候的情况. 控制第一个下标的就是a,第二个下标的就是b,不过下面的循环中下标都是从0开始的
 
-  // 对于上面的每一个向量v[i]
+  // N=4时候的情况. 控制第一个下标的就是a,第二个下标的就是b,不过下面的循环中下标都是从0开始的
   for(int i = 0; i < 4; i++) {
     // 每一个向量v[i]可以提供四个控制点的"雏形"v[i]^[0]~v[i]^[3]
-    // 这四个"雏形"两两组合一共有六种组合方式: 01 02 03 12 13 23
+    // 这四个"雏形"两两组合一共有六种组合方式: 
     // 下面的a变量就是前面的那个id,b就是后面的那个id
     int a = 0, b = 1;
     for(int j = 0; j < 6; j++) {
-      // dv[i][j]=v[i]^[a]-v[i]^[b], 两个"雏形"作差
+      // dv[i][j]=v[i]^[a]-v[i]^[b]
+      // a,b的取值有6种组合 0-1 0-2 0-3 1-2 1-3 2-3
       dv[i][j][0] = v[i][3 * a    ] - v[i][3 * b    ];
       dv[i][j][1] = v[i][3 * a + 1] - v[i][3 * b + 1];
       dv[i][j][2] = v[i][3 * a + 2] - v[i][3 * b + 2];
@@ -1092,7 +1188,8 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
     }
   }
 
-  // 生成L矩阵的每一行
+  // Step 3 用前面计算的dv生成L矩阵
+  // 这里的6代表前面每个12x1维向量v的4个3x1子向量v^[i]对应的6种组合
   for(int i = 0; i < 6; i++) {
     double * row = l_6x10 + 10 * i;
     // 计算每一行中的每一个元素,总共是10个元素      // 对应的\beta列向量
@@ -1109,7 +1206,10 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
   }
 }
 
-// 计算四个控制点任意两点间的距离，总共6个距离
+/**
+ * @brief 计算四个控制点任意两点间的距离，总共6个距离，对应论文式13中的向量\rho
+ * @param[in] rho  计算结果
+ */
 void PnPsolver::compute_rho(double * rho)
 {
   // 四个点两两组合一共有6中组合方式: 01 02 03 12 13 23
@@ -1121,87 +1221,96 @@ void PnPsolver::compute_rho(double * rho)
   rho[5] = dist2(cws[2], cws[3]);
 }
 
-// 计算高斯牛顿法优化时,增量方程中的系数矩阵和非齐次项
+/**
+ * @brief 计算高斯牛顿法优化时,增量方程中的系数矩阵和非齐次项
+ * @param[in]  l_6x10 L矩阵
+ * @param[in]  rho    Rho矩向量
+ * @param[in]  cb     当前次迭代得到的beta1~beta4
+ * @param[out] A      计算得到的增量方程中的系数矩阵
+ * @param[out] b      计算得到的增量方程中的非齐次项
+ */
 void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double * rho,
 					double betas[4], CvMat * A, CvMat * b)
 {
-  /** 根据前面函数 gauss_newton 中的一些工作,可以发现这里的系数矩阵其实就是目标函数雅克比的转置. 原目标函数:
-   * \f$ f(\mathbf{\beta})=\sum_{(i,j \  s.t. \  i<j)} \left( ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 - ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2 \right)  \f$ 
-   * 然后观察一下每一项的组成: \f$ ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2  \f$ 由论文中式12可以发现就对应着矩阵 L 中的一行,
-   * 同样地对于 \f$ ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2  \f$ 则对应着式(13)中向量 \f$  \mathbf{\rho} \f$ 的每一行.所以目标函数完全可以写成矩阵的形式:
-   * \f$ f(\mathbf{\beta})=\mathbf{L}\mathbf{\bar{\beta}}-\mathbf{\rho}  \f$
-   * 注意这里使用的符号:
-   * \f$ \mathbf{\bar{\beta}}= \begin{bmatrix} \beta_{11}\\\beta_{12}\\\beta_{22}\\\beta_{13}\\\beta_{23}\\\beta_{33}\\\beta_{14}\\\beta_{24}\\\beta_{34}\\\beta_{44} \end{bmatrix} \f$
-   * 为了方便求导,计算得到一个中间结果先:
-   * \f$ \begin{split}
-   *  \mathbf{\bar{L}}&=\mathbf{L}\mathbf{\bar{\beta}}\\
-   *  &=
-   *  \begin{bmatrix}
-   *  L_{11}\beta_{11}+L_{12}\beta_{12}+L_{13}\beta_{22}+\cdots+L_{1A}\beta_{44}\\
-   *  L_{21}\beta_{11}+L_{22}\beta_{22}+L_{13}\beta_{22}+\cdots+L_{2A}\beta_{44}\\
-   *  \cdots\\
-   *  L_{61}\beta_{11}+L_{62}\beta_{22}+L_{63}\beta_{22}+\cdots+L_{6A}\beta_{44}\\
-   *  \end{bmatrix}
-   *  &=
-   *  \begin{bmatrix}
-   *  \mathbf{L_1}\\\mathbf{L_2}\\\cdots\\\mathbf{L_3}
-   *  \end{bmatrix}
-   *  \end{split} \f$
-   *  然后原来的目标函数矩阵表示变成为了:
-   *  \f$  f(\mathbf{\beta})=\mathbf{\bar{L}}-\mathbf{\rho} \f$
-   *  接下来准备求目标函数的雅克比.注意到只有矩阵 \f$ \mathbf{\bar{L}} \f$ 和优化变量 \f$ \mathbf{\beta} \f$ 有关系,因此有:
-   * \f$ \begin{split}
-   * \frac{\partial f(\mathbf{\beta})}{\partial \mathbf{\beta}}&=\frac{\partial \mathbf{L}}{\partial \mathbf{\beta}}\\
-   * &=
-   * \begin{bmatrix}
-   * \frac{\partial \mathbf{L}}{\partial \beta_1}&\frac{\partial \mathbf{L}}{\partial \beta_2}&
-   * \frac{\partial \mathbf{L}}{\partial \beta_3}&\frac{\partial \mathbf{L}}{\partial \beta_4}
-   * \end{bmatrix} \\
-   * &=
-   * \begin{bmatrix}
-   * \frac{\partial \mathbf{L}_1}{\partial \beta_1}&\frac{\partial \mathbf{L}_1}{\partial \beta_2}&
-   * \frac{\partial \mathbf{L}_1}{\partial \beta_3}&\frac{\partial \mathbf{L}_1}{\partial \beta_4}\\
-   * \frac{\partial \mathbf{L}_2}{\partial \beta_1}&\frac{\partial \mathbf{L}_2}{\partial \beta_2}&
-   * \frac{\partial \mathbf{L}_2}{\partial \beta_3}&\frac{\partial \mathbf{L}_2}{\partial \beta_4}\\
-   * \cdots&\cdots&\cdots&\cdots\\
-   * \frac{\partial \mathbf{L}_6}{\partial \beta_1}&\frac{\partial \mathbf{L}_6}{\partial \beta_2}&
-   * \frac{\partial \mathbf{L}_6}{\partial \beta_3}&\frac{\partial \mathbf{L}_6}{\partial \beta_4}
-   * \end{bmatrix}
-   * \end{split} \f$
-   * 从优化目标函数的概念触发,其中的每一行的约束均由一对点来提供,因此不同行之间其实并无关系,可以相互独立地计算,因此对于其中的每一行:(以第一行为例)
-   * \f$ \mathbf{L}_1=
-   * \beta_{11}L_{11}+\beta_{12}L_{12}+\beta_{22}L_{13}+\beta_{13}L_{14}+\beta_{23}L_{15}+
-   * \beta_{33}L_{16}+\beta_{14}L_{17}+\beta_{24}L_{18}+\beta_{34}L_{19}+\beta_{44}L_{1A} \f$
-   * 分别对beat进行求导:(注意为了方便这里把L的下标从1开始变成了从0开始)
-   * \f$ \frac{\partial \mathbf{L}_1}{\partial \beta_1}=2\beta_1L_{10}+\beta_2L_{11}+\beta_3L_{13}+\beta_4L_{16} \\
-   * \frac{\partial \mathbf{L}_1}{\partial \beta_2}=\beta_1L_{11}+2\beta_2L_{12}+\beta_3L_{14}+\beta_4L_{17} \\
-   * \frac{\partial \mathbf{L}_1}{\partial \beta_3}=\beta_1L_{13}+\beta_2L_{14}+2\beta_3L_{15}+\beta_4L_{18} \\
-   * \frac{\partial \mathbf{L}_1}{\partial \beta_4}=\beta_1L_{16}+\beta_2L_{17}+\beta_3L_{18}+2\beta_4L_{19}  \f$
-   * 就是下面计算每一行的雅克比的式子.
-   * 
-   * 另外对于当前行的非齐次项, 在 gauss_newton 中简化后得到的结果为 -f(x), 也就是:
-   * \f$ ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2 - ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 \f$
-   * 每一行都会有一个特定的i和j.上式中的前者可以直接由 \f$ \mathbf{\rho} \f$ 的对应行给定,而后者则要根据论文公式(12)给出了:
-   * \f$ ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 = \mathbf{L}_k\mathbf{\bar{\beta}} \f$ 
-   * 这个也就是非齐次项部分的计算过程
-   */
+  // 以下推导就是求解一阶雅克比矩阵
+
+  // /* 根据前面函数 gauss_newton 中的一些工作,可以发现这里的系数矩阵其实就是目标函数雅克比的转置. 原目标函数:
+  //  * \f$ f(\mathbf{\beta})=\sum_{(i,j \  s.t. \  i<j)} \left( ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 - ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2 \right)  \f$ 
+  //  * 然后观察一下每一项的组成: \f$ ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2  \f$ 由论文中式12可以发现就对应着矩阵 L 中的一行,
+  //  * 同样地对于 \f$ ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2  \f$ 则对应着式(13)中向量 \f$  \mathbf{\rho} \f$ 的每一行.所以目标函数完全可以写成矩阵的形式:
+  //  * \f$ f(\mathbf{\beta})=\mathbf{L}\mathbf{\bar{\beta}}-\mathbf{\rho}  \f$
+  //  * 注意这里使用的符号:
+  //  * \f$ \mathbf{\bar{\beta}}= \begin{bmatrix} \beta_{11}\\\beta_{12}\\\beta_{22}\\\beta_{13}\\\beta_{23}\\\beta_{33}\\\beta_{14}\\\beta_{24}\\\beta_{34}\\\beta_{44} \end{bmatrix} \f$
+  //  * 为了方便求导,计算得到一个中间结果先:
+  //  * \f$ \begin{split}
+  //  *  \mathbf{\bar{L}}&=\mathbf{L}\mathbf{\bar{\beta}}\\
+  //  *  &=
+  //  *  \begin{bmatrix}
+  //  *  L_{11}\beta_{11}+L_{12}\beta_{12}+L_{13}\beta_{22}+\cdots+L_{1A}\beta_{44}\\
+  //  *  L_{21}\beta_{11}+L_{22}\beta_{22}+L_{13}\beta_{22}+\cdots+L_{2A}\beta_{44}\\
+  //  *  \cdots\\
+  //  *  L_{61}\beta_{11}+L_{62}\beta_{22}+L_{63}\beta_{22}+\cdots+L_{6A}\beta_{44}\\
+  //  *  \end{bmatrix}
+  //  *  &=
+  //  *  \begin{bmatrix}
+  //  *  \mathbf{L_1}\\\mathbf{L_2}\\\cdots\\\mathbf{L_3}
+  //  *  \end{bmatrix}
+  //  *  \end{split} \f$
+  //  *  然后原来的目标函数矩阵表示变成为了:
+  //  *  \f$  f(\mathbf{\beta})=\mathbf{\bar{L}}-\mathbf{\rho} \f$
+  //  *  接下来准备求目标函数的雅克比.注意到只有矩阵 \f$ \mathbf{\bar{L}} \f$ 和优化变量 \f$ \mathbf{\beta} \f$ 有关系,因此有:
+  //  * \f$ \begin{split}
+  //  * \frac{\partial f(\mathbf{\beta})}{\partial \mathbf{\beta}}&=\frac{\partial \mathbf{L}}{\partial \mathbf{\beta}}\\
+  //  * &=
+  //  * \begin{bmatrix}
+  //  * \frac{\partial \mathbf{L}}{\partial \beta_1}&\frac{\partial \mathbf{L}}{\partial \beta_2}&
+  //  * \frac{\partial \mathbf{L}}{\partial \beta_3}&\frac{\partial \mathbf{L}}{\partial \beta_4}
+  //  * \end{bmatrix} \\
+  //  * &=
+  //  * \begin{bmatrix}
+  //  * \frac{\partial \mathbf{L}_1}{\partial \beta_1}&\frac{\partial \mathbf{L}_1}{\partial \beta_2}&
+  //  * \frac{\partial \mathbf{L}_1}{\partial \beta_3}&\frac{\partial \mathbf{L}_1}{\partial \beta_4}\\
+  //  * \frac{\partial \mathbf{L}_2}{\partial \beta_1}&\frac{\partial \mathbf{L}_2}{\partial \beta_2}&
+  //  * \frac{\partial \mathbf{L}_2}{\partial \beta_3}&\frac{\partial \mathbf{L}_2}{\partial \beta_4}\\
+  //  * \cdots&\cdots&\cdots&\cdots\\
+  //  * \frac{\partial \mathbf{L}_6}{\partial \beta_1}&\frac{\partial \mathbf{L}_6}{\partial \beta_2}&
+  //  * \frac{\partial \mathbf{L}_6}{\partial \beta_3}&\frac{\partial \mathbf{L}_6}{\partial \beta_4}
+  //  * \end{bmatrix}
+  //  * \end{split} \f$
+  //  * 从优化目标函数的概念触发,其中的每一行的约束均由一对点来提供,因此不同行之间其实并无关系,可以相互独立地计算,因此对于其中的每一行:(以第一行为例)
+  //  * \f$ \mathbf{L}_1=
+  //  * \beta_{11}L_{11}+\beta_{12}L_{12}+\beta_{22}L_{13}+\beta_{13}L_{14}+\beta_{23}L_{15}+
+  //  * \beta_{33}L_{16}+\beta_{14}L_{17}+\beta_{24}L_{18}+\beta_{34}L_{19}+\beta_{44}L_{1A} \f$
+  //  * 分别对beat进行求导:(注意为了方便这里把L的下标从1开始变成了从0开始)
+  //  * \f$ \frac{\partial \mathbf{L}_1}{\partial \beta_1}=2\beta_1L_{10}+\beta_2L_{11}+\beta_3L_{13}+\beta_4L_{16} \\
+  //  * \frac{\partial \mathbf{L}_1}{\partial \beta_2}=\beta_1L_{11}+2\beta_2L_{12}+\beta_3L_{14}+\beta_4L_{17} \\
+  //  * \frac{\partial \mathbf{L}_1}{\partial \beta_3}=\beta_1L_{13}+\beta_2L_{14}+2\beta_3L_{15}+\beta_4L_{18} \\
+  //  * \frac{\partial \mathbf{L}_1}{\partial \beta_4}=\beta_1L_{16}+\beta_2L_{17}+\beta_3L_{18}+2\beta_4L_{19}  \f$
+  //  * 就是下面计算每一行的雅克比的式子.
+  //  * 
+  //  * 另外对于当前行的非齐次项, 在 gauss_newton 中简化后得到的结果为 -f(x), 也就是:
+  //  * \f$ ||\mathbf{c}^w_i-\mathbf{c}^w_j ||^2 - ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 \f$
+  //  * 每一行都会有一个特定的i和j.上式中的前者可以直接由 \f$ \mathbf{\rho} \f$ 的对应行给定,而后者则要根据论文公式(12)给出了:
+  //  * \f$ ||\mathbf{c}^c_i-\mathbf{c}^c_j ||^2 = \mathbf{L}_k\mathbf{\bar{\beta}} \f$ 
+  //  * 这个也就是非齐次项部分的计算过程
+  //  */
 
 
 
   // 一共有六个方程组, 对每一行(也就是每一个方程展开遍历);
-  // 从优化目标函数的概念触发,其中的每一行的约束均由一对点来提供,因此不同行之间其实并无关系,可以相互独立地计算
+  // 从优化目标函数的概念出发,其中的每一行的约束均由一对点来提供,因此不同行之间其实并无关系,可以相互独立地计算
   for(int i = 0; i < 6; i++) {
     // 获得矩阵L中的行指针
     const double * rowL = l_6x10 + i * 10;
     double * rowA = A->data.db + i * 4;
 
-    // step 1: 计算当前行的雅克比
+    // Step 1: 计算当前行的雅克比
     rowA[0] = 2 * rowL[0] * betas[0] +     rowL[1] * betas[1] +     rowL[3] * betas[2] +     rowL[6] * betas[3];
     rowA[1] =     rowL[1] * betas[0] + 2 * rowL[2] * betas[1] +     rowL[4] * betas[2] +     rowL[7] * betas[3];
     rowA[2] =     rowL[3] * betas[0] +     rowL[4] * betas[1] + 2 * rowL[5] * betas[2] +     rowL[8] * betas[3];
     rowA[3] =     rowL[6] * betas[0] +     rowL[7] * betas[1] +     rowL[8] * betas[2] + 2 * rowL[9] * betas[3];
 
-    // step 2: 计算当前行的非齐次项
+    // Step 2: 计算当前行的非齐次项
     cvmSet(b, i, 0, rho[i] -
 	   (                                    // 从0开始的下标 | 从1开始的下标
 	    rowL[0] * betas[0] * betas[0] +     //b00 b11
@@ -1239,7 +1348,7 @@ void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
   double a[6*4], b[6], x[4];
   CvMat A = cvMat(6, 4, CV_64F, a);   // 系数矩阵
   CvMat B = cvMat(6, 1, CV_64F, b);   // 非齐次项
-  CvMat X = cvMat(4, 1, CV_64F, x);   // 增量
+  CvMat X = cvMat(4, 1, CV_64F, x);   // 增量，待求量
 
   // 对于每次迭代过程
   for(int k = 0; k < iterations_number; k++) {
@@ -1255,12 +1364,16 @@ void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
   }
 }
 
-// 使用QR分解来求解增量方程;源代码格式有kandong重新进行了格式化
-// NOTICE 但是其中具体的代码实现使用了许kandong析上的 tricks, 卡在这里看了好几天也没有能够看懂
+/**
+ * @brief 使用QR分解来求解增量方程 
+ * @param[in]  A   洗漱矩阵
+ * @param[in]  b   非齐次项
+ * @param[out] X   增量
+ */
 void PnPsolver::qr_solve(CvMat * A, CvMat * b, CvMat * X)
 {
-  static int max_nr = 0;        //? 静态的,存储运行这个程序历史上的最大的系数矩阵行数?
-  static double * A1, * A2;     //? unkown
+  static int max_nr = 0;        
+  static double * A1, * A2;     
 
   const int nr = A->rows;       // 系数矩阵A的行数
   const int nc = A->cols;       // 系数矩阵A的列数

@@ -114,8 +114,12 @@ public:
 
  private:
 
-  /** @brief (在计算完相机位姿后)检查匹配点的内外点情况 */
+  /**
+  * @brief 通过之前求解的位姿来进行3D-2D投影，统计内点数目
+  * 
+  */
   void CheckInliers();
+
   /** @brief 使用已经是内点的匹配点对，再进行一次EPnP过程，进行相机位姿的求精. 
    *  @return bool 返回的结果表示经过求精过程后的内点数,能否达到退出RANSAC的要求
    */
@@ -169,18 +173,26 @@ public:
    * @deprecated 在ORB中没有用到
    */
   void print_pose(const double R[3][3], const double t[3]);
-/**
- * @brief 计算在给定位姿的时候的3D点投影误差
- * @param[in] R      给定旋转
- * @param[in] t      给定平移
- * @return double    重投影误差,是平均到每一对匹配点上的误差
- */
+  /**
+  * @brief 计算在给定位姿的时候的3D点投影误差
+  * @param[in] R      给定旋转
+  * @param[in] t      给定平移
+  * @return double    重投影误差,是平均到每一对匹配点上的误差
+  */
   double reprojection_error(const double R[3][3], const double t[3]);
 
-  /** @brief 从给定的匹配点中计算出四个控制点(控制点的概念参考EPnP原文) */
+  /**
+   * @brief 从给定的匹配点中计算出四个控制点
+   * 
+   */
   void choose_control_points(void);
-  /**  @brief 计算匹配的3D点在使用控制点坐标系表示的时候的 alpha系数  */
+  
+  /**
+  * @brief 求解世界坐标系下四个控制点的系数alphas，在相机坐标系下系数不变
+  * 
+  */
   void compute_barycentric_coordinates(void);
+
   /**
    * @brief 根据提供的每一对点的数据来填充Moment Matrix M. 每对匹配点的数据可以填充两行
    * @param[in] M                cvMat对应,存储矩阵M
@@ -196,31 +208,39 @@ public:
    * @param[in] ut          其实是vi
    */
   void compute_ccs(const double * betas, const double * ut);
-  /** @brief 计算用四个控制点作为单位向量表示下的世界坐标系下3D点的坐标 */
+
+  /**
+  * @brief 根据相机坐标系下控制点坐标ccs 和控制点系数 alphas（通过世界坐标系下3D点计算得到），得到相机坐标系下3D点坐标 pcs
+  * 过程可以参考 https://blog.csdn.net/jessecw79/article/details/82945918
+  */
   void compute_pcs(void);
   /** @brief 保持所有点在相机坐标系下的深度为正,调整符号  */
   void solve_for_sign(void);
 
   /**
-   * @brief 计算N=4时候的情况
+   * @brief 计算N=4时候的粗糙近似解，暴力将其他量置为0
    * 
    * @param[in]  L_6x10  矩阵L
    * @param[in]  Rho     非齐次项 \rho, 列向量
    * @param[out] betas   计算得到的beta
    */
   void find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+
   /**
-   * @brief 计算N=2的情况
-   * @param[in]  L_6x10     L
-   * @param[in]  Rho        \rho
-   * @param[out] betas      betas
+   * @brief 计算N=2时候的粗糙近似解，暴力将其他量置为0
+   * 
+   * @param[in]  L_6x10  矩阵L
+   * @param[in]  Rho     非齐次项 \rho, 列向量
+   * @param[out] betas   计算得到的beta
    */
   void find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+
   /**
-   * @brief 计算N=3的情况
-   * @param[in]  L_6x10     L
-   * @param[in]  Rho        \rho
-   * @param[out] betas      betas
+   * @brief 计算N=3时候的粗糙近似解，暴力将其他量置为0
+   * 
+   * @param[in]  L_6x10  矩阵L
+   * @param[in]  Rho     非齐次项 \rho, 列向量
+   * @param[out] betas   计算得到的beta
    */
   void find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho, double * betas);
   /**
@@ -247,14 +267,15 @@ public:
   double dist2(const double * p1, const double * p2);
  
   /**
-   * @brief 计算论文式13中的向量\rho
-   * @param[put] rho  计算结果
+   * @brief 计算四个控制点任意两点间的距离，总共6个距离，对应论文式13中的向量\rho
+   * @param[in] rho  计算结果
    */
   void compute_rho(double * rho);
+
   /**
    * @brief 计算矩阵L,论文式13中的L矩阵,不过这里的是按照N=4的时候计算的
-   * @param[in]  ut               v_i组成的矩阵,也就是奇异值分解之后得到的做奇异矩阵
-   * @param[out] l_6x10           计算结果 
+   * @param[in]  ut               特征值分解之后得到的12x12特征矩阵
+   * @param[out] l_6x10           计算的L矩阵结果，维度6x10 
    */
   void compute_L_6x10(const double * ut, double * l_6x10);
   /**
@@ -287,7 +308,7 @@ public:
 			 double R[3][3], double t[3]);
 
   /**
-   * @brief 根据调整后的控制点和3D点在相机坐标系下的坐标来计算相机的位姿
+   * @brief 用3D点在世界坐标系和相机坐标系下对应的坐标，用ICP求取R t
    * @param[out] R   旋转
    * @param[out] t   平移
    */
@@ -311,78 +332,78 @@ public:
   void mat_to_quat(const double R[3][3], double q[4]);
 
 
-  double uc, vc, fu, fv;                                          ///< 相机内参
+  double uc, vc, fu, fv;                                          // 相机内参
 
-  double * pws,                                                   ///< 3D点在世界坐标系下在坐标
+  double * pws,                                                   // 3D点在世界坐标系下在坐标
                                                                   //   组织形式: x1 y1 z1 | x2 y2 z2 | ...
-         * us,                                                    ///< 图像坐标系下的2D点坐标
+         * us,                                                    // 图像坐标系下的2D点坐标
                                                                   //   组织形式: u1 v1 | u2 v2 | ...
-         * alphas,                                                ///< 真实3D点用4个虚拟控制点表达时的系数
+         * alphas,                                                // 真实3D点用4个虚拟控制点表达时的系数
                                                                   //   组织形式: a11 a12 a13 a14 | a21 a22 a23 a24 | ... 每个匹配点都有自己的a1~a4
-         * pcs;                                                   ///< 3D点在当前帧相机坐标系下的坐标 
-  int maximum_number_of_correspondences;                          ///< 每次RANSAC计算的过程中使用的匹配点对数的最大值,其实应该和最小集的大小是完全相同的
-  int number_of_correspondences;                                  ///< 当前次迭代中,已经采样的匹配点的个数;也用来指导这个"压入到数组"的过程中操作
+         * pcs;                                                   // 3D点在当前帧相机坐标系下的坐标 
+  int maximum_number_of_correspondences;                          // 每次RANSAC计算的过程中使用的匹配点对数的最大值,其实应该和最小集的大小是完全相同的
+  int number_of_correspondences;                                  // 当前次迭代中,已经采样的匹配点的个数，默认值为4
 
-  double cws[4][3],                                               ///< 存储控制点在世界坐标系下的坐标，第一维表示是哪个控制点，第二维表示是哪个坐标(x,y,z)
-         ccs[4][3];                                               ///< 存储控制点在相机坐标系下的坐标, 含义同上
-  double cws_determinant;                                         ///< 没有被使用到的变量,但是看变量名字,应该是用于存储某个矩阵的行列式值的
+  double cws[4][3],                                               // 存储控制点在世界坐标系下的坐标，第一维表示是哪个控制点，第二维表示是哪个坐标(x,y,z)
+         ccs[4][3];                                               // 存储控制点在相机坐标系下的坐标, 含义同上
+  double cws_determinant;                                         // 没有被使用到的变量,但是看变量名字,应该是用于存储某个矩阵的行列式值的
 
-  vector<MapPoint*> mvpMapPointMatches;                           ///< 存储构造的时候给出的地图点 
+  vector<MapPoint*> mvpMapPointMatches;                           // 存储构造的时候给出的地图点 
 
   // 2D Points
-  vector<cv::Point2f> mvP2D;                                      ///< 存储当前帧的2D点,由特征点转换而来,只保存了坐标信息
-  vector<float> mvSigma2;                                         ///< 和2D特征点向量下标对应的尺度和不确定性信息(从该特征点所在的金字塔图层有关)
+  vector<cv::Point2f> mvP2D;                                      // 存储当前帧的2D点,由特征点转换而来,只保存了坐标信息
+  vector<float> mvSigma2;                                         // 和2D特征点向量下标对应的尺度和不确定性信息(从该特征点所在的金字塔图层有关)
 
   // 3D Points
-  vector<cv::Point3f> mvP3Dw;                                     ///< 存储给出的地图点中有效的地图点(在世界坐标系下的坐标)
+  vector<cv::Point3f> mvP3Dw;                                     // 存储给出的地图点中有效的地图点(在世界坐标系下的坐标)
 
   // Index in Frame
-  vector<size_t> mvKeyPointIndices;                               ///< 记录构造时给出的地图点对应在帧中的特征点的id,这个是"跳跃的"
+  vector<size_t> mvKeyPointIndices;                               // 记录构造时给出的地图点对应在帧中的特征点的id,这个是"跳跃的"
 
   // Current Estimation
-  double mRi[3][3];                                               ///< 在某次RANSAC迭代过程中计算得到的旋转矩阵
-  double mti[3];                                                  ///< 在某次RANSAC迭代过程中计算得到的平移向量
-  cv::Mat mTcwi;                                                  ///< 在程序中并没有被使用到的变量
-  vector<bool> mvbInliersi;                                       ///< 记录每次迭代时的inlier点
-  int mnInliersi;                                                 ///< 记录每次迭代时的inlier点的数目
+  double mRi[3][3];                                               // 在某次RANSAC迭代过程中计算得到的旋转矩阵
+  double mti[3];                                                  // 在某次RANSAC迭代过程中计算得到的平移向量
+  cv::Mat mTcwi;                                                  // 在程序中并没有被使用到的变量
+  vector<bool> mvbInliersi;                                       // 记录每次迭代时的inlier点
+  int mnInliersi;                                                 // 记录每次迭代时的inlier点的数目
 
   // Current Ransac State
-  int mnIterations;                                               ///< 历史上已经进行的RANSAC迭代次数
-  vector<bool> mvbBestInliers;                                    ///< 历史上最好一次迭代时的内点标记
-  int mnBestInliers;                                              ///< 历史上的迭代中最多的内点数
-  cv::Mat mBestTcw;                                               ///< 历史上最佳的一次迭代所计算出来的相机位姿
+  int mnIterations;                                               // 历史上已经进行的RANSAC迭代次数
+  vector<bool> mvbBestInliers;                                    // 历史上最好一次迭代时的内点标记
+  int mnBestInliers;                                              // 历史上的迭代中最多的内点数
+  cv::Mat mBestTcw;                                               // 历史上最佳的一次迭代所计算出来的相机位姿
 
   // Refined
-  cv::Mat mRefinedTcw;                                            ///< 求精之后得到的相机位姿
-  vector<bool> mvbRefinedInliers;                                 ///< 求精之后的内点标记
-  int mnRefinedInliers;                                           ///< 求精之后的内点数
+  cv::Mat mRefinedTcw;                                            // 求精之后得到的相机位姿
+  vector<bool> mvbRefinedInliers;                                 // 求精之后的内点标记
+  int mnRefinedInliers;                                           // 求精之后的内点数
 
   // Number of Correspondences
-  int N;                                                          ///< 就是 mvP2D 的大小,表示给出帧中和地图点匹配的特征点的个数,也就是匹配的对数(相当于采样的总体)
+  int N;                                                          // 就是 mvP2D 的大小,表示给出帧中和地图点匹配的特征点的个数,也就是匹配的对数(相当于采样的总体)
 
   // Indices for random selection [0 .. N-1]
-  vector<size_t> mvAllIndices;                                    ///< 记录特征点在当前求解器中的向量中存储的索引,是连续的 //存储了供RANSAC过程使用的点的下标
+  vector<size_t> mvAllIndices;                                    // 记录特征点在当前求解器中的向量中存储的索引,是连续的 //存储了供RANSAC过程使用的点的下标
 
   // RANSAC probability
-  double mRansacProb;                                             ///< 计算RANSAC迭代次数的理论值的时候用到的概率,和Sim3Slover中的一样
+  double mRansacProb;                                             // 计算RANSAC迭代次数的理论值的时候用到的概率,和Sim3Slover中的一样
 
   // RANSAC min inliers
-  int mRansacMinInliers;                                          ///< 正常退出RANSAC的时候需要达到的最最少的内点个数f
+  int mRansacMinInliers;                                          // 正常退出RANSAC的时候需要达到的最最少的内点个数f
 
   // RANSAC max iterations
-  int mRansacMaxIts;                                              ///< RANSAC的最大迭代次数
+  int mRansacMaxIts;                                              // RANSAC的最大迭代次数
 
   // RANSAC expected inliers/total ratio
-  float mRansacEpsilon;                                           ///< RANSAC中,最小内点数占全部点个数的比例
+  float mRansacEpsilon;                                           // RANSAC中,最小内点数占全部点个数的比例
 
   // RANSAC Threshold inlier/outlier. Max error e = dist(P1,T_12*P2)^2
-  float mRansacTh;                                                ///< 在程序中并没有使用到的变量
+  float mRansacTh;                                                // 在程序中并没有使用到的变量
 
   // RANSAC Minimun Set used at each iteration
-  int mRansacMinSet;                                              ///< 为每次RANSAC需要的特征点数，默认为4组3D-2D对应点. 参与到最少内点数的确定过程中
+  int mRansacMinSet;                                              // 为每次RANSAC需要的特征点数，默认为4组3D-2D对应点. 参与到最少内点数的确定过程中
 
   // Max square error associated with scale level. Max error = th*th*sigma(level)*sigma(level)
-  vector<float> mvMaxError;                                       ///< 存储不同图层上的特征点在进行内点验证的时候,使用的不同的距离阈值
+  vector<float> mvMaxError;                                       // 存储不同图层上的特征点在进行内点验证的时候,使用的不同的距离阈值
 
 };
 
