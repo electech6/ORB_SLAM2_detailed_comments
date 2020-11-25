@@ -13,6 +13,26 @@
 
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
+欢迎 [扫描](https://img-blog.csdnimg.cn/img_convert/8b991fd7399f9445fd594061abb973ff.png)关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
+
+附部分内容讲解视频：
+
+[ORBSLAM2新手必看：简介、安装、运行](https://www.bilibili.com/video/BV1DV411z7mY)
+
+[ORBSLAM2源码讲解专题1：ORB特征点提取与均匀化策略](https://www.bilibili.com/video/BV1154y1D7tA)
+
+[ORBSLAM2源码讲解专题2：Oriented Fast神奇高效的代码实现方式](https://www.bilibili.com/video/BV1FZ4y1H7JH)
+
+[ORB-SLAM源码讲解专题3：ORBSLAM2的单目初始化](https://www.bilibili.com/video/BV1HT4y1j7W3)
+
+[ORB-SLAM源码讲解专题4: 单目Tracking线程](https://www.bilibili.com/video/BV1Gt4y1D7HD)
+
+[ORBSLAM2源码讲解专题5：理解共视图、本质图、扩展树](https://www.bilibili.com/video/BV1e54y1278y)
+
+[ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
+
+更多 ORBSLAM 系列视频教程（已经更新到40讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)
+
 ----
 
 
