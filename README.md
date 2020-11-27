@@ -13,7 +13,6 @@
 
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
-点击 [扫描](https://img-blog.csdnimg.cn/img_convert/8b991fd7399f9445fd594061abb973ff.png)关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
 
 附部分内容讲解视频：
 
@@ -32,6 +31,10 @@
 [ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
 
 更多 ORBSLAM 系列视频教程（已经更新到40讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)
+
+关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
+
+![qrcode](https://github.com/electech6/ORBSLAM2_detailed_comments/blob/master/qrcode.jpg)
 
 ----
 
