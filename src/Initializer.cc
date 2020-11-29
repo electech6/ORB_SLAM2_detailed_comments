@@ -1682,13 +1682,12 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     // Step 7 得到3D点中较大的视差角，并且转换成为角度制表示
     if(nGood>0)
     {
-        // 从小到大排序
+        // 从小到大排序，注意vCosParallax值越大，视差越小
         sort(vCosParallax.begin(),vCosParallax.end());
 
-        // !排序后并没有取最大的视差角，而是取一个较大的视差角
-		// 作者的做法：如果经过检验过后的有效3D点小于50个，那么就取最后那个最大的视差角
-		// 如果大于50个，就取排名第50个的视差角，足够大就可以没有必要非得要最大的 
-        // ?可能是为了避免3D点太多时出现太大的视差角，那可以取个中值啊！
+        // !排序后并没有取最小的视差角，而是取一个较小的视差角
+		// 作者的做法：如果经过检验过后的有效3D点小于50个，那么就取最后那个最小的视差角(cos值最大)
+		// 如果大于50个，就取排名第50个的较小的视差角即可，为了避免3D点太多时出现太小的视差角 
         size_t idx = min(50,int(vCosParallax.size()-1));
 		//将这个选中的角弧度制转换为角度制
         parallax = acos(vCosParallax[idx])*180/CV_PI;
