@@ -503,7 +503,7 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
         mvInvLevelSigma2[i]=1.0f/mvLevelSigma2[i];
     }
 
-    //调整图像金字塔vector以使得其符合咱们设定的图像层数
+    //调整图像金字塔vector以使得其符合设定的图像层数
     mvImagePyramid.resize(nlevels);
 
 	//每层需要提取出来的特征点个数，这个向量也要根据图像金字塔设定的层数进行调整
@@ -1668,9 +1668,10 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
 		//全尺寸图像。包括无效图像区域的大小。将图像进行“补边”，EDGE_THRESHOLD区域外的图像不进行FAST角点检测
         Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
-		//?声明两个临时变量，temp貌似并未使用，masktemp并未使用
+		// 定义了两个变量：temp是扩展了边界的图像，masktemp并未使用
         Mat temp(wholeSize, image.type()), masktemp;
-		//把图像金字塔该图层的图像copy给temp（这里为浅拷贝，内存相同）
+        // mvImagePyramid 刚开始时是个空的vector<Mat>
+		// 把图像金字塔该图层的图像指针mvImagePyramid指向temp的中间部分（这里为浅拷贝，内存相同）
         mvImagePyramid[level] = temp(Rect(EDGE_THRESHOLD, EDGE_THRESHOLD, sz.width, sz.height));
 
         // Compute the resized image
@@ -1686,7 +1687,7 @@ void ORBextractor::ComputePyramid(cv::Mat image)
 				   cv::INTER_LINEAR);		//图像缩放的差值算法类型，这里的是线性插值算法
 
 			//把源图像拷贝到目的图像的中央，四面填充指定的像素。图片如果已经拷贝到中间，只填充边界
-			//TODO 貌似这样做是因为在计算描述子前，进行高斯滤波的时候，图像边界会导致一些问题，说不明白
+			//这样做是为了能够正确提取边界的FAST角点
 			//EDGE_THRESHOLD指的这个边界的宽度，由于这个边界之外的像素不是原图像素而是算法生成出来的，所以不能够在EDGE_THRESHOLD之外提取特征点			
             copyMakeBorder(mvImagePyramid[level], 					//源图像
 						   temp, 									//目标图像（此时其实就已经有大了一圈的尺寸了）
@@ -1708,8 +1709,8 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         }
         else
         {
-			//对于底层图像，直接就扩充边界了
-            //?temp 是在循环内部新定义的，在该函数里又作为输出，并没有使用啊！
+			//对于第0层未缩放图像，直接将图像深拷贝到temp的中间，并且对其周围进行边界扩展。此时temp就是对原图扩展后的图像
+            // 因为temp和mvImagePyramid[level] 指向同一块内存，所以mvImagePyramid[level]中就存储了扩展后图像
             copyMakeBorder(image,			//这里是原图像
 						   temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
                            BORDER_REFLECT_101);            

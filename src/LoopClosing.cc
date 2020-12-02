@@ -963,11 +963,13 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
 {
     cout << "Starting Global Bundle Adjustment" << endl;
 
-    // 记录当前迭代id,用来检查全局BA过程是否是因为意外结束的
+    // 记录GBA已经迭代次数,用来检查全局BA过程是否是因为意外结束的
     int idx =  mnFullBAIdx;
-    // mbStopGBA直接传引用过去了,这样当有外部请求的时候这个优化函数能够及时相应并且结束掉
-    //? 提问:进行完这个过程后我们能够获得哪些信息?
-    // 回答：能够得到全部关键帧优化后的位姿,以及部分地图点优化之后的位姿
+    // mbStopGBA直接传引用过去了,这样当有外部请求的时候这个优化函数能够及时响应并且结束掉
+    // 提问:进行完这个过程后我们能够获得哪些信息?
+    // 回答：能够得到全部关键帧优化后的位姿,以及优化后的地图点
+
+    // Step 1 执行全局BA，优化所有的关键帧位姿和地图中地图点
     Optimizer::GlobalBundleAdjustemnt(mpMap,        // 地图点对象
                                       10,           // 迭代次数
                                       &mbStopGBA,   // 外界控制 GBA 停止的标志
@@ -978,17 +980,20 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
     // Local Mapping was active during BA, that means that there might be new keyframes
     // not included in the Global BA and they are not consistent with the updated map.
     // We need to propagate the correction through the spanning tree
+    // 更新所有的地图点和关键帧
+    // 在global BA过程中local mapping线程仍然在工作，这意味着在global BA时可能有新的关键帧产生，但是并未包括在GBA里，
+    // 所以和更新后的地图并不连续。需要通过spanning tree来传播
     {
         unique_lock<mutex> lock(mMutexGBA);
-        // 如果全局BA过程是因为意外结束的,那么后面的内容就都不用管了
+        // 如果全局BA过程是因为意外结束的,那么直接退出GBA
         if(idx!=mnFullBAIdx)
             return;
 
-        // 如果没有中断当前次BA的请求
+        // 如果当前GBA没有中断请求，更新位姿和地图点
         // 这里和上面那句话的功能还有些不同,因为如果一次全局优化被中断,往往意味又要重新开启一个新的全局BA;为了中断当前正在执行的优化过程mbStopGBA将会被置位,同时会有一定的时间
         // 使得该线程进行响应;而在开启一个新的全局优化进程之前 mbStopGBA 将会被置为False
         // 因此,如果被强行中断的线程退出时已经有新的线程启动了,mbStopGBA=false,为了避免进行后面的程序,所以有了上面的程序;
-        // 而如果被强行终端的线程退出时新的线程还没有启动,那么上面的条件就不起作用了(虽然概率很小,前面的程序中mbStopGBA置位后很快mnFullBAIdx就++了,保险起见),所以这里要再判断一次
+        // 而如果被强行中断的线程退出时新的线程还没有启动,那么上面的条件就不起作用了(虽然概率很小,前面的程序中mbStopGBA置位后很快mnFullBAIdx就++了,保险起见),所以这里要再判断一次
         if(!mbStopGBA)
         {
             cout << "Global Bundle Adjustment finished" << endl;
@@ -996,6 +1001,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
             mpLocalMapper->RequestStop();
 
             // Wait until Local Mapping has effectively stopped
+            // 等待直到local mapping结束才会继续后续操作
             while(!mpLocalMapper->isStopped() && !mpLocalMapper->isFinished())
             {
 				//usleep(1000);
@@ -1003,13 +1009,17 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
 			}
 
             // Get Map Mutex
+            // 后续要更新地图所以要上锁
             unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
             // Correct keyframes starting at map first keyframe
-            // 看上去是一个向量，但是要知道这个变量中其实只保存了第一个关键帧
+            // 看上去是链表，其实只保存了初始化第一个关键帧
             list<KeyFrame*> lpKFtoCheck(mpMap->mvpKeyFrameOrigins.begin(),mpMap->mvpKeyFrameOrigins.end());
 
-            // 遍历全局地图中的所有关键帧
+            // 问：GBA里锁住第一个关键帧位姿没有优化，其对应的pKF->mTcwGBA是不变的吧？那后面调整位姿的意义何在？
+            // 回答：注意在前面essential graph BA里只锁住了回环帧，没有锁定第1个初始化关键帧位姿。所以第1个初始化关键帧位姿已经更新了
+            // 在GBA里锁住第一个关键帧位姿没有优化，其对应的pKF->mTcwGBA应该是essential BA结果，在这里统一更新了
+            // Step 2 遍历并更新全局地图中的所有spanning tree中的关键帧
             while(!lpKFtoCheck.empty())
             {
                 KeyFrame* pKF = lpKFtoCheck.front();
@@ -1019,14 +1029,15 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 for(set<KeyFrame*>::const_iterator sit=sChilds.begin();sit!=sChilds.end();sit++)
                 {
                     KeyFrame* pChild = *sit;
-                    // 避免重复设置
+                    // 记录避免重复
                     if(pChild->mnBAGlobalForKF!=nLoopKF)
                     {
-                        // (对于坐标系中的点的话)从父关键帧到当前子关键帧的位姿变换
+                        // 从父关键帧到当前子关键帧的位姿变换 T_child_farther
                         cv::Mat Tchildc = pChild->GetPose()*Twc;
-                        // （对于坐标系中的点）再利用优化后的父关键帧的位姿，转换到世界坐标系下 --  //? 算是得到了这个子关键帧的优化后的位姿啦？
+                        // 再利用优化后的父关键帧的位姿，转换到世界坐标系下，相当于更新了子关键帧的位姿
                         // 这种最小生成树中除了根节点，其他的节点都会作为其他关键帧的子节点，这样做可以使得最终所有的关键帧都得到了优化
-                        pChild->mTcwGBA = Tchildc*pKF->mTcwGBA;//*Tcorc*pKF->mTcwGBA;
+                        pChild->mTcwGBA = Tchildc*pKF->mTcwGBA;
+                        // 做个标记，避免重复
                         pChild->mnBAGlobalForKF=nLoopKF;
 
                     }
@@ -1042,7 +1053,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
             // Correct MapPoints
             const vector<MapPoint*> vpMPs = mpMap->GetAllMapPoints();
 
-            // 遍历每一个地图点
+            // Step 3 遍历每一个地图点并用更新的关键帧位姿来更新地图点位置
             for(size_t i=0; i<vpMPs.size(); i++)
             {
                 MapPoint* pMP = vpMPs[i];
@@ -1050,7 +1061,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 if(pMP->isBad())
                     continue;
 
-                // NOTICE 并不是所有的地图点都会直接参与到全局BA优化中,但是大部分的地图点需要根据全局BA优化后的结果来重新纠正自己的位姿
+                // 注意并不是所有的地图点都会直接参与到全局BA优化中,但是大部分的地图点需要根据全局BA优化后的结果来重新纠正自己的位姿
                 // 如果这个地图点直接参与到了全局BA优化的过程,那么就直接重新设置器位姿即可
                 if(pMP->mnBAGlobalForKF==nLoopKF)
                 {
@@ -1062,8 +1073,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                     // Update according to the correction of its reference keyframe
                     KeyFrame* pRefKF = pMP->GetReferenceKeyFrame();
 
-                    // 说明这个关键帧，在前面的过程中也没有因为“当前关键帧”得到全局BA优化 
-                    //? 可是,为什么会出现这种情况呢? 难道是因为这个地图点的参考关键帧设置成为了bad?
+                    // 如果参考关键帧并没有经过此次全局BA优化，就跳过 
                     if(pRefKF->mnBAGlobalForKF!=nLoopKF)
                         continue;
 

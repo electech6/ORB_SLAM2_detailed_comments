@@ -129,7 +129,8 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         // 对于每一个能用的关键帧构造SE3顶点,其实就是当前关键帧的位姿
         g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();
         vSE3->setEstimate(Converter::toSE3Quat(pKF->GetPose()));
-        vSE3->setId(pKF->mnId);
+        // 顶点的id就是关键帧在所有关键帧中的id
+        vSE3->setId(pKF->mnId); 
         // 只有第0帧关键帧不优化（参考基准）
         vSE3->setFixed(pKF->mnId==0);
 
@@ -160,14 +161,14 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         // 前面记录maxKFid 是在这里使用的
         const int id = pMP->mnId+maxKFid+1;
         vPoint->setId(id);
-        // g2o在做BA的优化时必须将其所有地图点全部schur掉，否则会出错。
+        // 注意g2o在做BA的优化时必须将其所有地图点全部schur掉，否则会出错。
         // 原因是使用了g2o::LinearSolver<BalBlockSolver::PoseMatrixType>这个类型来指定linearsolver,
         // 其中模板参数当中的位姿矩阵类型在程序中为相机姿态参数的维度，于是BA当中schur消元后解得线性方程组必须是只含有相机姿态变量。
         // Ceres库则没有这样的限制
         vPoint->setMarginalized(true);
         optimizer.addVertex(vPoint);
 
-        // 边的关系，其实就是点和关键帧之间观测的关系
+        // 取出地图点和关键帧之间观测的关系
         const map<KeyFrame*,size_t> observations = pMP->GetObservations();
 
         // 边计数
@@ -179,12 +180,12 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         {
 
             KeyFrame* pKF = mit->first;
-            // 滤出不合法的关键帧
+            // 跳过不合法的关键帧
             if(pKF->isBad() || pKF->mnId>maxKFid)
                 continue;
 
             nEdges++;
-
+            // 取出该地图点对应该关键帧的2D特征点
             const cv::KeyPoint &kpUn = pKF->mvKeysUn[mit->second];
 
             if(pKF->mvuRight[mit->second]<0)
@@ -197,7 +198,9 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
                 // 创建边
                 g2o::EdgeSE3ProjectXYZ* e = new g2o::EdgeSE3ProjectXYZ();
                 // 填充数据，构造约束关系
+                // 第0个顶点对应的id 是地图点的id
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(id)));
+                // 第1个顶点对应的id是 关键帧的id
                 e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKF->mnId)));
                 e->setMeasurement(obs);
                 // 信息矩阵，也是协方差，表明了这个约束的观测在各个维度（x,y）上的可信程度，在我们这里对于具体的一个点，两个坐标的可信程度都是相同的，
@@ -221,7 +224,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
                 e->fy = pKF->fy;
                 e->cx = pKF->cx;
                 e->cy = pKF->cy;
-
+                // 添加边
                 optimizer.addEdge(e);
             }
             else
@@ -283,15 +286,14 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
     // Recover optimized data
     // Step 5：得到优化的结果
 
-    // Step 5.1 Keyframes
-    // 遍历所有的关键帧
+    // Step 5.1 遍历所有的关键帧
     for(size_t i=0; i<vpKFs.size(); i++)
     {
         KeyFrame* pKF = vpKFs[i];
         if(pKF->isBad())
             continue;
 
-        // 获取到优化结果
+        // 获取到优化后的位姿
         g2o::VertexSE3Expmap* vSE3 = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(pKF->mnId));
         g2o::SE3Quat SE3quat = vSE3->estimate();
         if(nLoopKF==0)
@@ -1117,6 +1119,7 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
         }
 
         // 闭环匹配上的帧不进行位姿优化（认为是准确的，作为基准）
+        // 注意这里并没有锁住第0个关键帧，所以初始关键帧位姿也做了优化
         if(pKF==pLoopKF)
             VSim3->setFixed(true);
 

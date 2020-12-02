@@ -1053,7 +1053,7 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
     betas[3] = b4[3] / betas[0];
   }
 }
-                       ]
+                       
 /**
  * @brief 计算N=2时候的粗糙近似解，暴力将其他量置为0
  * 
