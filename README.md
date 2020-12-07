@@ -30,7 +30,51 @@
 
 [ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
 
-更多 ORBSLAM 系列视频教程（已经更新到40讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)
+更多 ORBSLAM 系列视频教程（已经更新到42讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)
+目前已经讲解的目录如下：
+
+ORBSLAM2原理代码详解01-简介安装运行.mp4                                           
+ORBSLAM2原理代码详解02-图像金字塔特征点数目、灰度质心圆索引.mp4                               
+ORBSLAM2原理代码详解03-特征提取仿函数、图像扩充金字塔.mp4                                  
+ORBSLAM2原理代码详解04-特征点四叉树均匀化分配策略.mp4                                    
+ORBSLAM2原理代码详解05-ORB特征点方向计算实现旋转不变性.mp4                                
+ORBSLAM2原理代码详解06-ORB描述子steer brief计算方法.mp4                            
+ORBSLAM2原理代码详解07-去畸变算图像边界划分网格.mp4                                     
+ORBSLAM2原理代码详解08-稀疏双目立体匹配.mp4                                         
+ORBSLAM2原理代码详解09-单目初始化快速特征匹配方法.mp4                                    
+ORBSLAM2原理代码详解10-单目初始化中特征匹配角点筛查原理及bug解析.mp4                           
+ORBSLAM2原理代码详解11-单目初始化单应矩阵归一化及DLT计算原理.mp4                             
+ORBSLAM2原理代码详解12-单目初始化根据得分找到最佳单应基础矩阵.mp4                              
+ORBSLAM2原理代码详解13-卡方检验介绍及在源码的应用.mp4                                    
+ORBSLAM2原理代码详解14-从单应矩阵恢复位姿及三角化.mp4                                    
+ORBSLAM2原理代码详解15-从基础矩阵得到最佳位姿及三维点.mp4                                  
+ORBSLAM2原理代码详解16- 初始化三维点来构造初始化地图.mp4                                  
+ORBSLAM2原理代码详解17- 初始化关键帧更新共视关系、尺度归一化.mp4                              
+ORBSLAM2原理代码详解18-视觉词袋BoW的应用背景.mp4                                     
+ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector.mp4                 
+ORBSLAM2原理代码详解20- 参考关键帧跟踪当前普通帧.mp4                                    
+ORBSLAM2原理代码详解21- 恒速模型跟踪当前普通帧.mp4                                     
+ORBSLAM2原理代码详解22- 跟踪丢失后的重定位方法.mp4                                     
+ORBSLAM2原理代码详解23- 跟踪局部地图-创建局部关键帧和地图点.mp4                              
+ORBSLAM2原理代码详解24-局部地图跟踪-局部地图点搜索匹配.mp4                                 
+ORBSLAM2原理代码详解25- 关键帧简介、插入及创建关键帧.mp4                                  
+ORBSLAM2原理代码详解26- 不同跟踪方法的对比、跟踪完整流程.mp4                                
+ORBSLAM2原理代码详解27- 局部建图线程处理新关键帧、检查删除地图点.mp4                            
+ORBSLAM2原理代码详解28- 局部建图线程生成新的地图点.mp4                                   
+ORBSLAM2原理代码详解29- 局部建图里两级局部关键帧地图点融合.mp4                               
+ORBSLAM2原理代码详解30- 局部建图里localBA过程.mp4                                  
+ORBSLAM2原理代码详解31- 局部建图线程剔除关键帧及线程梳理.mp4                                
+ORBSLAM2原理代码详解32- 闭环检测寻找初始闭环候选关键帧.mp4                                 
+ORBSLAM2原理代码详解33- 根据闭环连续性进一步精选闭环候选关键帧.mp4                             
+ORBSLAM2原理代码详解34- 为什么需要计算Sim3？.mp4                                    
+ORBSLAM2原理代码详解35- 通过估计的Sim3变换互相投影来获得更多的匹配对.mp4                        
+ORBSLAM2原理代码详解36- 闭环时固定地图点用G2O进行Sim3优化.mp4                            
+ORBSLAM2原理代码详解37- 闭环候选连接关键帧地图点投影匹配.mp4                                
+ORBSLAM2原理代码详解38- 闭环矫正SIM3位姿传播.mp4                                    
+ORBSLAM2原理代码详解39- 闭环矫正SIM3位姿修正地图点.mp4                                 
+ORBSLAM2原理代码详解40- 闭环相连关键帧组投影匹配融合地图点.mp4                               
+ORBSLAM2原理代码详解41- ORB-SLAM2中的essential graph，spanning tree原理.mp4      
+ORBSLAM2原理代码详解42- 闭环检测中的essential graph优化代码实现.mp4     
 
 关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
 
