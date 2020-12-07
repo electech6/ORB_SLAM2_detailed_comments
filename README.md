@@ -19,7 +19,7 @@
 
 [ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
 
-更多 ORBSLAM 系列视频教程（已经更新到42讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)
+更多 ORBSLAM 系列视频教程（已经更新到42讲） 及SLAM入门视频请：[点击查看](https://mp.weixin.qq.com/s/IjI0VLR3l6NkrHHEKEaIYg)，
 目前已经讲解的目录如下：
 
 ORBSLAM2原理代码详解01-简介安装运行.mp4                                           
