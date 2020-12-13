@@ -135,7 +135,7 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
     // 遍历给出的每一个地图点
     for(size_t i=0, iend=vpMapPointMatches.size(); i<iend; i++)
     {
-        MapPoint* pMP = vpMapPointMatches[i];//依次获取一个MapPoint
+        MapPoint* pMP = vpMapPointMatches[i];//依次获取每个地图点
 
         if(pMP)
         {
@@ -661,7 +661,7 @@ void PnPsolver::compute_barycentric_coordinates(void)
  * @brief 根据提供的每一对点的数据来填充矩阵 M. 每对匹配点的数据可以填充两行
  * @param[in] M                cvMat对应,存储矩阵M
  * @param[in] row              开始填充数据的行
- * @param[in] alphas           世界坐标系下3D点用4个虚拟控制点表达时的4个系数
+ * @param[in] as           世界坐标系下3D点用4个虚拟控制点表达时的4个系数
  * @param[in] u                2D点坐标u
  * @param[in] v                2D点坐标v
  */
@@ -695,11 +695,11 @@ void PnPsolver::fill_M(CvMat * M,
  */
 void PnPsolver::compute_ccs(const double * betas, const double * ut)
 {
-  // Step 1 赋值初始值为0
+  // Step 1 清空4个控制点坐标ccs
   for(int i = 0; i < 4; i++)
     ccs[i][0] = ccs[i][1] = ccs[i][2] = 0.0f;
 
-  // Step 2 
+  // Step 2 根据前面计算的beta和v计算控制点坐标
   for(int i = 0; i < 4; i++) {
     // 注意这里传过来的向量ut中,最后的部分才是v,依次是  x  x  x  ... x v4 v3 v2 v1
     // 这里就是在最后面一次取出 v1 ~ v4

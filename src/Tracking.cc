@@ -439,8 +439,8 @@ void Tracking::Track()
     mLastProcessedState=mState;
 
     // Get Map Mutex -> Map cannot be changed
-    // 上锁。保证地图不会发生变化
-    // 疑问:这样子会不会影响地图的更新?
+    // 地图更新时加锁。保证地图不会发生变化
+    // 疑问:这样子会不会影响地图的实时更新?
     // 回答：主要耗时在构造帧中特征点的提取和匹配部分,在那个时候地图是没有被上锁的,有足够的时间更新地图
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 

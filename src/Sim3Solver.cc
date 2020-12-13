@@ -119,7 +119,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
             mvpMapPoints2.push_back(pMP2);
             mvnIndices1.push_back(i1);
 
-            // 计算这对匹配地图点分别在各自相机坐标系下的坐标
+            // 计算这对匹配地图点分别在各自相机坐标系下的坐标（用来计算SIM3）
             cv::Mat X3D1w = pMP1->GetWorldPos();
             mvX3Dc1.push_back(Rcw1*X3D1w+tcw1);
 
@@ -383,7 +383,7 @@ void Sim3Solver::ComputeSim3(cv::Mat &P1, cv::Mat &P2)
 
     // Rotation angle. sin is the norm of the imaginary part, cos is the real part
     // 四元数虚部模长 norm(vec)=sin(theta/2), 四元数实部 evec.at<float>(0,0)=q0=cos(theta/2)
-    // 这一步的ang实际是theta/2，theta 是旋转向量中旋转角度的 1/2
+    // 这一步的ang实际是theta/2，theta 是旋转向量中旋转角度
     // ? 这里也可以用 arccos(q0)=angle/2 得到旋转角吧
     double ang=atan2(norm(vec),evec.at<float>(0,0));
 
