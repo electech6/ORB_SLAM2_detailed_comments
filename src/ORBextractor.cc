@@ -1679,7 +1679,15 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         if( level != 0 )
         {
 			//将上一层金字塔图像根据设定sz缩放到当前层级
-            resize(mvImagePyramid[level-1],	//输入图像
+            // resize(mvImagePyramid[level-1],	//输入图像
+			// 	   mvImagePyramid[level], 	//输出图像
+			// 	   sz, 						//输出图像的尺寸
+			// 	   0, 						//水平方向上的缩放系数，留0表示自动计算
+			// 	   0,  						//垂直方向上的缩放系数，留0表示自动计算
+			// 	   cv::INTER_LINEAR);		//图像缩放的差值算法类型，这里的是线性插值算法
+
+            //!  原代码mvImagePyramid 并未扩充，上面resize应该改为如下
+            resize(image,	                //输入图像
 				   mvImagePyramid[level], 	//输出图像
 				   sz, 						//输出图像的尺寸
 				   0, 						//水平方向上的缩放系数，留0表示自动计算
@@ -1710,11 +1718,12 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         else
         {
 			//对于第0层未缩放图像，直接将图像深拷贝到temp的中间，并且对其周围进行边界扩展。此时temp就是对原图扩展后的图像
-            // 因为temp和mvImagePyramid[level] 指向同一块内存，所以mvImagePyramid[level]中就存储了扩展后图像
             copyMakeBorder(image,			//这里是原图像
 						   temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
                            BORDER_REFLECT_101);            
         }
+        //! 原代码mvImagePyramid 并未扩充，应该添加下面一行代码
+        mvImagePyramid[level] = temp;
     }
 
 }

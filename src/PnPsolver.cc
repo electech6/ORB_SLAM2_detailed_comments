@@ -1327,7 +1327,14 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
   }
 }
 
-// 对计算出来的Beta结果进行高斯牛顿法优化,求精. 过程参考EPnP论文中式(15) 
+
+/**
+ * @brief 对计算出来的Beta结果进行高斯牛顿法优化,求精. 过程参考EPnP论文中式(15) 
+ * 
+ * @param[in] L_6x10  
+ * @param[in] Rho 
+ * @param[in] betas 
+ */
 void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
 			double betas[4])
 {

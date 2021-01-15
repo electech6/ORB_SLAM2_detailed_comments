@@ -838,7 +838,7 @@ void Frame::ComputeStereoMatches()
           3. 精确匹配. 以点qi为中心，半径为r的范围内，进行块匹配（归一化SAD），进一步优化匹配结果
           4. 亚像素精度优化. 步骤3得到的视差为uchar/int类型精度，并不一定是真实视差，通过亚像素差值（抛物线插值)获取float精度的真实视差
           5. 最优视差值/深度选择. 通过胜者为王算法（WTA）获取最佳匹配点。
-          6. 删除离缺点(outliers). 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是正确匹配，比如光照变化、弱纹理等会造成误匹配
+          6. 删除离群点(outliers). 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是正确匹配，比如光照变化、弱纹理等会造成误匹配
      * 输出：稀疏特征点视差图/深度图（亚像素精度）mvDepth 匹配结果 mvuRight
      */
 
@@ -985,10 +985,11 @@ void Frame::ComputeStereoMatches()
             vDists.resize(2*L+1); 
 
             // 计算滑动窗口滑动范围的边界，因为是块匹配，还要算上图像块的尺寸
-            // 列方向起点 iniu = r0 + 最大窗口滑动范围 - 图像块尺寸
+            // 列方向起点 iniu = r0 - 最大窗口滑动范围 - 图像块尺寸
             // 列方向终点 eniu = r0 + 最大窗口滑动范围 + 图像块尺寸 + 1
             // 此次 + 1 和下面的提取图像块是列坐标+1是一样的，保证提取的图像块的宽是2 * w + 1
-            const float iniu = scaleduR0+L-w;
+            // ! 源码： const float iniu = scaleduR0+L-w; 错误
+            const float iniu = scaleduR0-L-w;
             const float endu = scaleduR0+L+w+1;
 
 			// 判断搜索是否越界
@@ -1018,7 +1019,7 @@ void Frame::ComputeStereoMatches()
                 vDists[L+incR] = dist; 	
             }
 
-            // 搜索窗口越界判断ß 
+            // 搜索窗口越界判断
             if(bestincR==-L || bestincR==L)
                 continue;
 
@@ -1062,7 +1063,7 @@ void Frame::ComputeStereoMatches()
         }   
     }
     }
-    // Step 6. 删除离缺点(outliers)
+    // Step 6. 删除离群点(outliers)
     // 块匹配相似度阈值判断，归一化sad最小，并不代表就一定是匹配的，比如光照变化、弱纹理、无纹理等同样会造成误匹配
     // 误匹配判断条件  norm_sad > 1.5 * 1.4 * median
     sort(vDistIdx.begin(),vDistIdx.end());

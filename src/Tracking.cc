@@ -236,6 +236,8 @@ void Tracking::SetViewer(Viewer *pViewer)
 // 1、将图像转为mImGray和imGrayRight并初始化mCurrentFrame
 // 2、进行tracking过程
 // 输出世界坐标系到该帧相机坐标系的变换矩阵
+
+
 cv::Mat Tracking::GrabImageStereo(
     const cv::Mat &imRectLeft,      //左侧图像
     const cv::Mat &imRectRight,     //右侧图像
@@ -1460,7 +1462,7 @@ bool Tracking::TrackLocalMap()
                     // 记录当前帧跟踪到的MapPoints，用于统计跟踪效果
                     mnMatchesInliers++;
             }
-            //如果这个地图点是外点,并且当前相机输入还是双目的时候,就删除这个点
+            // 如果这个地图点是外点,并且当前相机输入还是双目的时候,就删除这个点
             // ?单目就不管吗
             else if(mSensor==System::STEREO)  
                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
@@ -1673,7 +1675,7 @@ void Tracking::CreateNewKeyFrame()
             sort(vDepthIdx.begin(),vDepthIdx.end());
 
             // Step 3.3：从中找出不是地图点的生成临时地图点 
-            //处理的近点的个数
+            // 处理的近点的个数
             int nPoints = 0;
             for(size_t j=0; j<vDepthIdx.size();j++)
             {
