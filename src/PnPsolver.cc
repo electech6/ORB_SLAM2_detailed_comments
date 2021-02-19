@@ -731,8 +731,8 @@ void PnPsolver::compute_pcs(void)
 
 /**
  * @brief 使用EPnP算法计算相机的位姿.其中匹配点的信息由类的成员函数给定 
- * @param[out] R    旋转
- * @param[out] T    平移
+ * @param[out] R    求解位姿里的旋转矩阵
+ * @param[out] T    求解位姿里的平移向量
  * @return double   使用这对旋转和平移的时候, 匹配点对的平均重投影误差
  */
 double PnPsolver::compute_pose(double R[3][3], double t[3])
@@ -858,7 +858,7 @@ double PnPsolver::dot(const double * v1, const double * v2)
  */
 double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
 {
-  // 统计其实并不是平方
+  // 统计误差的平方
   double sum2 = 0.0;
 
   // 遍历每个3D点
@@ -945,7 +945,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
   const double det =
     R[0][0] * R[1][1] * R[2][2] + R[0][1] * R[1][2] * R[2][0] + R[0][2] * R[1][0] * R[2][1] -
     R[0][2] * R[1][1] * R[2][0] - R[0][1] * R[1][0] * R[2][2] - R[0][0] * R[1][2] * R[2][1];
-  // 如果小于0那么就要这样做
+  // 如果小于0那么就要加负号
   if (det < 0) {
     R[2][0] = -R[2][0];
     R[2][1] = -R[2][1];

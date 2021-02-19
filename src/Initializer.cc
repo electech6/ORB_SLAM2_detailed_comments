@@ -347,8 +347,8 @@ void Initializer::FindFundamental(vector<bool> &vbMatchesInliers, float &score, 
 
     // Number of putative matches
 	// 匹配的特征点对总数
-    const int N = vbMatchesInliers.size();
-
+    // const int N = vbMatchesInliers.size();  // !源代码出错！请使用下面代替
+    const int N = mvMatches12.size();
     // Normalize coordinates
     // Step 1 将当前帧和参考帧中的特征点坐标进行归一化，主要是平移和尺度变换
     // 具体来说,就是将mvKeys1和mvKey2归一化到均值为0，一阶绝对矩为1，归一化矩阵分别为T1、T2
@@ -653,7 +653,7 @@ float Initializer::CheckHomography(
     //信息矩阵，方差平方的倒数
     const float invSigmaSquare = 1.0/(sigma * sigma);
 
-    // Step 2 通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权最小二乘投影误差
+    // Step 2 通过H矩阵，进行参考帧和当前帧之间的双向投影，并计算起加权重投影误差
     // H21 表示从img1 到 img2的变换矩阵
     // H12 表示从img2 到 img1的变换矩阵 
     for(int i = 0; i < N; i++)
@@ -671,7 +671,7 @@ float Initializer::CheckHomography(
 
         // Step 2.2 计算 img2 到 img1 的重投影误差
         // x1 = H12*x2
-        // 将图像2中的特征点单应到图像1中
+        // 将图像2中的特征点通过单应变换投影到图像1中
         // |u1|   |h11inv h12inv h13inv||u2|   |u2in1|
         // |v1| = |h21inv h22inv h23inv||v2| = |v2in1| * w2in1inv
         // |1 |   |h31inv h32inv h33inv||1 |   |  1  |
@@ -693,7 +693,7 @@ float Initializer::CheckHomography(
 
         // 计算从img1 到 img2 的投影变换误差
         // x1in2 = H21*x1
-        // 将图像2中的特征点单应到图像1中
+        // 将图像2中的特征点通过单应变换投影到图像1中
         // |u2|   |h11 h12 h13||u1|   |u1in2|
         // |v2| = |h21 h22 h23||v1| = |v1in2| * w1in2inv
         // |1 |   |h31 h32 h33||1 |   |  1  |
@@ -1507,7 +1507,7 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
 }
 
 /**
- * @brief 用R，t来对特征匹配点三角化，并根据三角化结果判断R,t的合法性
+ * @brief 用位姿来对特征匹配点三角化，从中筛选中合格的三维点
  * 
  * @param[in] R                                     旋转矩阵R
  * @param[in] t                                     平移矩阵t

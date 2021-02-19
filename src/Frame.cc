@@ -45,8 +45,7 @@ long unsigned int Frame::nNextId=0;
 //这里给这个标志置位的操作是在最初系统开始加载到内存的时候进行的，下一帧就是整个系统的第一帧，所以这个标志要置位
 bool Frame::mbInitialComputations=true;
 
-//TODO 下面这些都没有进行赋值操作，但是也写在这里，是为什么？可能仅仅是前视声明?
-//目测好像仅仅是对这些类的静态成员变量做个前视声明，没有发现这个操作有特殊的含义
+
 float Frame::cx, Frame::cy, Frame::fx, Frame::fy, Frame::invfx, Frame::invfy;
 float Frame::mnMinX, Frame::mnMinY, Frame::mnMaxX, Frame::mnMaxY;
 float Frame::mfGridElementWidthInv, Frame::mfGridElementHeightInv;
@@ -475,9 +474,9 @@ void Frame::UpdatePoseMatrices()
 }
 
 /**
- * @brief 判断路标点是否在视野中
+ * @brief 判断地图点是否在视野中
  * 步骤
- * Step 1 获得这个地图点的世界坐标
+ * Step 1 获得这个地图点的世界坐标，经过以下层层关卡的判断，通过的地图点才认为是在视野中
  * Step 2 关卡一：检查这个地图点在当前帧的相机坐标系下，是否有正的深度.如果是负的，表示出错，返回false
  * Step 3 关卡二：将MapPoint投影到当前帧的像素坐标(u,v), 并判断是否在图像有效范围内
  * Step 4 关卡三：计算MapPoint到相机中心的距离, 并判断是否在尺度变化的距离内

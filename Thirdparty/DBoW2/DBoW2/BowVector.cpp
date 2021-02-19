@@ -31,6 +31,12 @@ BowVector::~BowVector(void)
 
 // --------------------------------------------------------------------------
 
+/**
+ * @brief 更新BowVector中的单词权重
+ * 
+ * @param[in] id    单词的ID
+ * @param[in] v     单词的权重
+ */
 void BowVector::addWeight(WordId id, WordValue v)
 {
   // 返回指向大于等于id的第一个值的位置
