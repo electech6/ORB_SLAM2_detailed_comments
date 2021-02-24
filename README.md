@@ -144,7 +144,7 @@
 
 关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
 
-![qrcode](https://github.com/electech6/ORBSLAM2_detailed_comments/blob/master/qrcode.jpg)
+![qrcode](https://github.com/electech6/ORBSLAM2_detailed_comments/blob/master/qrcode.png)
 
 ----
 
