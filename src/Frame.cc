@@ -477,14 +477,14 @@ void Frame::UpdatePoseMatrices()
  * @brief 判断地图点是否在视野中
  * 步骤
  * Step 1 获得这个地图点的世界坐标，经过以下层层关卡的判断，通过的地图点才认为是在视野中
- * Step 2 关卡一：检查这个地图点在当前帧的相机坐标系下，是否有正的深度.如果是负的，表示出错，返回false
- * Step 3 关卡二：将MapPoint投影到当前帧的像素坐标(u,v), 并判断是否在图像有效范围内
- * Step 4 关卡三：计算MapPoint到相机中心的距离, 并判断是否在尺度变化的距离内
- * Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值, 若小于设定阈值，返回false
+ * Step 2 关卡一：将这个地图点变换到当前帧的相机坐标系下，如果深度值为正才能继续下一步。
+ * Step 3 关卡二：将地图点投影到当前帧的像素坐标，如果在图像有效范围内才能继续下一步。
+ * Step 4 关卡三：计算地图点到相机中心的距离，如果在有效距离范围内才能继续下一步。
+ * Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角，小于60°才能进入下一步。
  * Step 6 根据地图点到光心的距离来预测一个尺度（仿照特征点金字塔层级）
  * Step 7 记录计算得到的一些参数
  * @param[in] pMP                       当前地图点
- * @param[in] viewingCosLimit           夹角余弦，用于限制地图点和光心连线和法线的夹角
+ * @param[in] viewingCosLimit           当前相机指向地图点向量和地图点的平均观测方向夹角余弦阈值
  * @return true                         地图点合格，且在视野内
  * @return false                        地图点不合格，抛弃
  */
@@ -506,12 +506,12 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     const float &PcZ = Pc.at<float>(2);
 
     // Check positive depth
-    // Step 2 关卡一：检查这个地图点在当前帧的相机坐标系下，是否有正的深度.如果是负的，表示出错，直接返回false
+    // Step 2 关卡一：将这个地图点变换到当前帧的相机坐标系下，如果深度值为正才能继续下一步。
     if(PcZ<0.0f)
         return false;
 
     // Project in image and check it is not outside
-    // Step 3 关卡二：将MapPoint投影到当前帧的像素坐标(u,v), 并判断是否在图像有效范围内
+    // Step 3 关卡二：将地图点投影到当前帧的像素坐标，如果在图像有效范围内才能继续下一步。
     const float invz = 1.0f/PcZ;			
     const float u=fx*PcX*invz+cx;			
     const float v=fy*PcY*invz+cy;			
@@ -523,7 +523,7 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
         return false;
 
     // Check distance is in the scale invariance region of the MapPoint
-    // Step 4 关卡三：计算MapPoint到相机中心的距离, 并判断是否在尺度变化的距离内
+    // Step 4 关卡三：计算地图点到相机中心的距离，如果在有效距离范围内才能继续下一步。
      // 得到认为的可靠距离范围:[0.8f*mfMinDistance, 1.2f*mfMaxDistance]
     const float maxDistance = pMP->GetMaxDistanceInvariance();
     const float minDistance = pMP->GetMinDistanceInvariance();
@@ -534,18 +534,18 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
 	//取模就得到了距离
     const float dist = cv::norm(PO);
 
-	//如果不在允许的尺度变化范围内，认为重投影不可靠
+	//如果不在有效范围内，认为投影不可靠
     if(dist<minDistance || dist>maxDistance)
         return false;
 
     // Check viewing angle
-    // Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值, 若小于cos(viewingCosLimit), 即夹角大于viewingCosLimit弧度则返回
+    // Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角，小于60°才能进入下一步。
     cv::Mat Pn = pMP->GetNormal();
 
 	// 计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值，注意平均观测方向为单位向量
     const float viewCos = PO.dot(Pn)/dist;
 
-	//如果大于给定的阈值 cos(60°)=0.5，认为这个点方向太偏了，重投影不可靠，返回false
+	//夹角要在60°范围内，否则认为观测方向太偏了，重投影不可靠，返回false
     if(viewCos<viewingCosLimit)
         return false;
 
@@ -570,7 +570,7 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     // 根据地图点到光心距离，预测的该地图点的尺度层级
     pMP->mnTrackScaleLevel = nPredictedLevel;		
 
-    // 保存当前视角和法线夹角的余弦值
+    // 保存当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值
     pMP->mTrackViewCos = viewCos;					
 
     //执行到这里说明这个地图点在相机的视野中并且进行重投影是可靠的，返回true
