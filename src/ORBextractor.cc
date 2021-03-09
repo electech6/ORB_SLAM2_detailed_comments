@@ -1622,7 +1622,7 @@ void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPo
         computeDescriptors(workingMat, 	//高斯模糊之后的图层图像
 						   keypoints, 	//当前图层中的特征点集合
 						   desc, 		//存储计算之后的描述子
-						   pattern);	//随机采样点集
+						   pattern);	//随机采样模板
 
 		// 更新偏移量的值 
         offset += nkeypointsLevel;
