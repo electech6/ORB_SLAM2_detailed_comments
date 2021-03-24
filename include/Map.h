@@ -140,7 +140,6 @@ public:
 
     // This avoid that two points are created simultaneously in separate threads (id conflict)
     ///为了避免地图点id冲突设计的互斥量
-    //? 如果插入的地图点id不同,但是由于误差等原因,产生的地图点非常相近,这个时候怎么处理?
     std::mutex mMutexPointCreation;
 
 protected:

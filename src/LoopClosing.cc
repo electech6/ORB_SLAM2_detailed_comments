@@ -182,7 +182,7 @@ bool LoopClosing::DetectLoop()
     // Query the database imposing the minimum score
     // Step 4：在所有关键帧中找出闭环候选帧（注意不和当前帧连接）
     // minScore的作用：认为和当前关键帧具有回环关系的关键帧,不应该低于当前关键帧的相邻关键帧的最低的相似度minScore
-    // 得到的这些关键帧,和当前关键帧具有较多的共视单词,并且相似度评分都挺高
+    // 得到的这些关键帧,和当前关键帧具有较多的公共单词,并且相似度评分都挺高
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidates(mpCurrentKF, minScore);
 
     // If there are no loop candidates, just add new keyframe and return false
@@ -239,13 +239,13 @@ bool LoopClosing::DetectLoop()
         // 把自己也加进去
         spCandidateGroup.insert(pCandidateKF);
 
-        // pCandidateKF 连续性达标的标志
+        // 连续性达标的标志
         bool bEnoughConsistent = false;
         bool bConsistentForSomeGroup = false;
-        // Step 5.3：遍历前一次闭环检测到的“子连续组”
-        // 上一次闭环的连续组 std::vector<ConsistentGroup> mvConsistentGroups
+        // Step 5.3：遍历前一次闭环检测到的连续组链
+        // 上一次闭环的连续组链 std::vector<ConsistentGroup> mvConsistentGroups
         // 其中ConsistentGroup的定义：typedef pair<set<KeyFrame*>,int> ConsistentGroup
-        // 其中 ConsistentGroup.first对应每个“连续组”中的关键帧，ConsistentGroup.second为每个“连续组”的已连续次数
+        // 其中 ConsistentGroup.first对应每个“连续组”中的关键帧集合，ConsistentGroup.second为每个“连续组”的连续长度
         for(size_t iG=0, iendG=mvConsistentGroups.size(); iG<iendG; iG++)
         {
             // 取出之前的一个子连续组中的关键帧集合
@@ -271,7 +271,7 @@ bool LoopClosing::DetectLoop()
                 // Step 5.5：如果判定为连续，接下来判断是否达到连续的条件
                 // 取出和当前的候选组发生"连续"关系的子连续组的"已连续次数"
                 int nPreviousConsistency = mvConsistentGroups[iG].second;
-                // 将当前候选组连续程度 +1，
+                // 将当前候选组连续长度在原子连续组的基础上 +1，
                 int nCurrentConsistency = nPreviousConsistency + 1;
                 // 如果上述连续关系还未记录到 vCurrentConsistentGroups，那么记录一下
                 // 注意这里spCandidateGroup 可能放置在vbConsistentGroup中其他索引(iG)下
@@ -286,7 +286,7 @@ bool LoopClosing::DetectLoop()
                     // 但是spCandidateGroup可能重复添加到不同的索引iG对应的vbConsistentGroup 中
                     vbConsistentGroup[iG]=true; 
                 }
-                // 如果已经连续得足够多了,那么当前的这个候选关键帧是足够靠谱的
+                // 如果连续长度满足要求，那么当前的这个候选关键帧是足够靠谱的
                 // 连续性阈值 mnCovisibilityConsistencyTh=3
                 // 足够连续的标记 bEnoughConsistent
                 if(nCurrentConsistency>=mnCovisibilityConsistencyTh && !bEnoughConsistent)

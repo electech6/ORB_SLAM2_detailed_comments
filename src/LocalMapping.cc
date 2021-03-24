@@ -338,7 +338,7 @@ void LocalMapping::CreateNewMapPoints()
     // Step 2：遍历相邻关键帧，搜索匹配并用极线约束剔除误匹配，最终三角化
     for(size_t i=0; i<vpNeighKFs.size(); i++)
     {
-        // 下面的过程会比较耗费时间,因此如果有新的关键帧需要处理的话,就先去处理新的关键帧吧
+        // ! 疑似bug，正确应该是 if(i>0 && !CheckNewKeyFrames())
         if(i>0 && CheckNewKeyFrames())
             return;
 
@@ -429,33 +429,32 @@ void LocalMapping::CreateNewMapPoints()
             // 由相机坐标系转到世界坐标系(得到的是那条反投影射线的一个同向向量在世界坐标系下的表示,还是只能够表示方向)，得到视差角余弦值
             cv::Mat ray1 = Rwc1*xn1;
             cv::Mat ray2 = Rwc2*xn2;
-            // 这个就是求向量之间角度公式
+            // 匹配点射线夹角余弦值
             const float cosParallaxRays = ray1.dot(ray2)/(cv::norm(ray1)*cv::norm(ray2));
 
             // 加1是为了让cosParallaxStereo随便初始化为一个很大的值
             float cosParallaxStereo = cosParallaxRays+1;  
+            // cosParallaxStereo1、cosParallaxStereo2在后面可能不存在，需要初始化为较大的值
             float cosParallaxStereo1 = cosParallaxStereo;
             float cosParallaxStereo2 = cosParallaxStereo;
 
             // Step 6.3：对于双目，利用双目得到视差角；单目相机没有特殊操作
             if(bStereo1)
                 // 传感器是双目相机,并且当前的关键帧的这个点有对应的深度
-                // 假设是平行的双目相机，计算出两个相机观察这个点的时候的视差角;
-                // ? 感觉直接使用向量夹角的方式计算会准确一些啊（双目的时候），那么为什么不直接使用那个呢？
-                // 回答：因为双目深度值、基线是更可靠的，比特征匹配再三角化出来的稳
+                // 假设是平行的双目相机，计算出双目相机观察这个点的时候的视差角余弦
                 cosParallaxStereo1 = cos(2*atan2(mpCurrentKeyFrame->mb/2,mpCurrentKeyFrame->mvDepth[idx1]));
             else if(bStereo2)
-                //传感器是双目相机,并且邻接的关键帧的这个点有对应的深度，和上面一样操作
+                // 传感器是双目相机,并且邻接的关键帧的这个点有对应的深度，和上面一样操作
                 cosParallaxStereo2 = cos(2*atan2(pKF2->mb/2,pKF2->mvDepth[idx2]));
             
-            // 得到双目观测的视差角
+            // 得到双目观测的视差角中最小的那个
             cosParallaxStereo = min(cosParallaxStereo1,cosParallaxStereo2);
 
             // Step 6.4：三角化恢复3D点
             cv::Mat x3D;
             // cosParallaxRays>0 && (bStereo1 || bStereo2 || cosParallaxRays<0.9998)表明视差角正常,0.9998 对应1°
-            // cosParallaxRays < cosParallaxStereo 表明视差角很小
-            // ?视差角度小时用三角法恢复3D点，视差角大时用双目恢复3D点（双目以及深度有效）
+            // cosParallaxRays < cosParallaxStereo 表明匹配点对夹角大于双目本身观察三维点夹角
+            // 匹配点对夹角大，用三角法恢复3D点
             // 参考：https://github.com/raulmur/ORB_SLAM2/issues/345
             if(cosParallaxRays<cosParallaxStereo && cosParallaxRays>0 && (bStereo1 || bStereo2 || cosParallaxRays<0.9998))
             {
@@ -477,6 +476,7 @@ void LocalMapping::CreateNewMapPoints()
                 // 归一化成为齐次坐标,然后提取前面三个维度作为欧式坐标
                 x3D = x3D.rowRange(0,3)/x3D.at<float>(3);
             }
+            // 匹配点对夹角小，用双目恢复3D点
             else if(bStereo1 && cosParallaxStereo1<cosParallaxStereo2)  
             {
                 // 如果是双目，用视差角更大的那个双目信息来恢复，直接用已知3D点反投影了
@@ -628,7 +628,7 @@ void LocalMapping::SearchInNeighbors()
     // 当前关键帧的邻接关键帧，称为一级相邻关键帧，也就是邻居
     // 与一级相邻关键帧相邻的关键帧，称为二级相邻关键帧，也就是邻居的邻居
 
-    // 单目情况要10个邻接关键帧，双目或者RGBD则要20个
+    // 单目情况要20个邻接关键帧，双目或者RGBD则要10个
     int nn = 10;
     if(mbMonocular)
         nn=20;
@@ -669,7 +669,7 @@ void LocalMapping::SearchInNeighbors()
     // 使用默认参数, 最优和次优比例0.6,匹配时检查特征点的旋转
     ORBmatcher matcher;
 
-    // Step 3：将当前帧的地图点分别投影到两级相邻关键帧地图点进行融合，称为正向投影融合
+    // Step 3：将当前帧的地图点分别投影到两级相邻关键帧，寻找匹配点对应的地图点进行融合，称为正向投影融合
     vector<MapPoint*> vpMapPointMatches = mpCurrentKeyFrame->GetMapPointMatches();
     for(vector<KeyFrame*>::iterator vit=vpTargetKFs.begin(), vend=vpTargetKFs.end(); vit!=vend; vit++)
     {
@@ -683,7 +683,7 @@ void LocalMapping::SearchInNeighbors()
     }
 
     // Search matches by projection from target KFs in current KF
-    // Step 4：将两级相邻关键帧地图点分别投影到当前关键帧地图点进行融合，称为反向投影融合
+    // Step 4：将两级相邻关键帧地图点分别投影到当前关键帧，寻找匹配点对应的地图点进行融合，称为反向投影融合
     // 用于进行存储要融合的一级邻接和二级邻接关键帧所有MapPoints的集合
     vector<MapPoint*> vpFuseCandidates;
     vpFuseCandidates.reserve(vpTargetKFs.size()*vpMapPointMatches.size());
@@ -881,6 +881,7 @@ void LocalMapping::KeyFrameCulling()
     for(vector<KeyFrame*>::iterator vit=vpLocalKeyFrames.begin(), vend=vpLocalKeyFrames.end(); vit!=vend; vit++)
     {
         KeyFrame* pKF = *vit;
+        // 第1个关键帧不能删除，跳过
         if(pKF->mnId==0)
             continue;
         // Step 2：提取每个共视关键帧的地图点
@@ -895,7 +896,7 @@ void LocalMapping::KeyFrameCulling()
                                                                                       
         int nMPs=0;            
 
-        // Step 3：遍历该共视关键帧的所有地图点，判断是否90%以上的地图点能被其它至少3个关键帧（同样或者更低层级）观测到
+        // Step 3：遍历该共视关键帧的所有地图点，其中能被其它至少3个关键帧观测到的地图点为冗余地图点
         for(size_t i=0, iend=vpMapPoints.size(); i<iend; i++)
         {
             MapPoint* pMP = vpMapPoints[i];
@@ -905,7 +906,7 @@ void LocalMapping::KeyFrameCulling()
                 {
                     if(!mbMonocular)
                     {
-                        // 对于双目，仅考虑近处（不超过基线的40倍 ）的地图点
+                        // 对于双目或RGB-D，仅考虑近处（不超过基线的40倍 ）的地图点
                         if(pKF->mvDepth[i]>pKF->mThDepth || pKF->mvDepth[i]<0)
                             continue;
                     }
@@ -947,7 +948,7 @@ void LocalMapping::KeyFrameCulling()
             }
         }
 
-        // Step 4：该关键帧90%以上的有效地图点被判断为冗余的，则删除该关键帧
+        // Step 4：如果该关键帧90%以上的有效地图点被判断为冗余的，则认为该关键帧是冗余的，需要删除该关键帧
         if(nRedundantObservations>0.9*nMPs)
             pKF->SetBadFlag();
     }

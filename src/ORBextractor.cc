@@ -1097,7 +1097,8 @@ void ORBextractor::ComputeKeyPointsOctTree(
 				//计算这列网格的最大列坐标，+6的含义和前面相同
                 float maxX = iniX+wCell+6;
 				//判断坐标是否在图像中
-				//TODO 不太能够明白为什么要-6，前面不都是-3吗
+				//如果初始的列坐标就已经超过了有效的图像边界了，这里的“有效图像”是指原始的、可以提取FAST特征点的图像区域。
+                //并且应该同前面行坐标的边界对应，都为-3
 				//!BUG  正确应该是maxBorderX-3
                 if(iniX>=maxBorderX-6)
                     continue;

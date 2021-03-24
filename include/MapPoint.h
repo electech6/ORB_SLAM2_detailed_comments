@@ -60,13 +60,13 @@ public:
      * 单目：CreateInitialMapMonocular()，LocalMapping::CreateNewMapPoints()
      * @param[in] Pos       MapPoint的坐标（wrt世界坐标系）
      * @param[in] pRefKF    KeyFrame
-     * @param[in] pMap      Map  //? 是输出吗
+     * @param[in] pMap      Map  
      */
     MapPoint(const cv::Mat &Pos, KeyFrame* pRefKF, Map* pMap);
     /**
      * @brief 给定坐标与frame构造MapPoint
      * @detials 被双目：UpdateLastFrame()调用
-     * @param[in] Pos       MapPoint的坐标（wrt世界坐标系）  //? wrt世界坐标系, 是什么意思? 
+     * @param[in] Pos       MapPoint的坐标（世界坐标系） 
      * @param[in] pMap      Map
      * @param[in] pFrame    Frame
      * @param[in] idxF      MapPoint在Frame中的索引，即对应的特征点的编号
@@ -92,7 +92,6 @@ public:
     cv::Mat GetNormal();
     /**
      * @brief 获取生成当前地图点的参考关键帧
-     * //? 那么对于由"当前帧"生成的地图点怎么办? 
      * @return KeyFrame* 
      */
     KeyFrame* GetReferenceKeyFrame();
@@ -141,7 +140,6 @@ public:
     bool IsInKeyFrame(KeyFrame* pKF);
     /**
      * @brief 告知可以观测到该MapPoint的Frame，该MapPoint已被删除
-     * //? 最好亲自查看一下这个函数是在哪里被调用的
      * 
      */
     void SetBadFlag();
