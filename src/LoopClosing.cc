@@ -344,9 +344,9 @@ bool LoopClosing::DetectLoop()
  * @brief 计算当前关键帧和上一步闭环候选帧的Sim3变换
  * 1. 遍历闭环候选帧集，筛选出与当前帧的匹配特征点数大于20的候选帧集合，并为每一个候选帧构造一个Sim3Solver
  * 2. 对每一个候选帧进行 Sim3Solver 迭代匹配，直到有一个候选帧匹配成功，或者全部失败
- * 3. 取出闭环匹配上关键帧的相连关键帧，得到它们的MapPoints放入 mvpLoopMapPoints
- * 4. 将闭环匹配上关键帧以及相连关键帧的MapPoints投影到当前关键帧进行投影匹配
- * 5. 判断当前帧与检测出的所有闭环关键帧是否有足够多的MapPoints匹配
+ * 3. 取出闭环匹配上关键帧的相连关键帧，得到它们的地图点放入 mvpLoopMapPoints
+ * 4. 将闭环匹配上关键帧以及相连关键帧的地图点投影到当前关键帧进行投影匹配
+ * 5. 判断当前帧与检测出的所有闭环关键帧是否有足够多的地图点匹配
  * 6. 清空mvpEnoughConsistentCandidates
  * @return true         只要有一个候选关键帧通过Sim3的求解与优化，就返回true
  * @return false        所有候选关键帧与当前关键帧都没有有效Sim3变换
@@ -356,7 +356,7 @@ bool LoopClosing::ComputeSim3()
     // Sim3 计算流程说明：
     // 1. 通过Bow加速描述子的匹配，利用RANSAC粗略地计算出当前帧与闭环帧的Sim3（当前帧---闭环帧）          
     // 2. 根据估计的Sim3，对3D点进行投影找到更多匹配，通过优化的方法计算更精确的Sim3（当前帧---闭环帧）   
-    // 3. 将闭环帧以及闭环帧相连的关键帧的MapPoints与当前帧的点进行匹配（当前帧---闭环帧+相连关键帧）     
+    // 3. 将闭环帧以及闭环帧相连的关键帧的地图点与当前帧的点进行匹配（当前帧---闭环帧+相连关键帧）     
     // 注意以上匹配的结果均都存在成员变量mvpCurrentMatchedPoints中，实际的更新步骤见CorrectLoop()步骤3
     // 对于双目或者是RGBD输入的情况,计算得到的尺度=1
 
@@ -370,15 +370,15 @@ bool LoopClosing::ComputeSim3()
     // If enough matches are found, we setup a Sim3Solver
     ORBmatcher matcher(0.75,true);
 
-    // 用 vector 存储每一个候选帧的Sim3Solver求解器
+    // 存储每一个候选帧的Sim3Solver求解器
     vector<Sim3Solver*> vpSim3Solvers;
     vpSim3Solvers.resize(nInitialCandidates);
 
-    // 用 vector 存储每个候选帧的匹配地图点信息
+    // 存储每个候选帧的匹配地图点信息
     vector<vector<MapPoint*> > vvpMapPointMatches;
     vvpMapPointMatches.resize(nInitialCandidates);
 
-    // 用 vector 存储每个候选帧应该被放弃(True）或者 保留(False)
+    // 存储每个候选帧应该被放弃(True）或者 保留(False)
     vector<bool> vbDiscarded;
     vbDiscarded.resize(nInitialCandidates);
 
@@ -569,7 +569,7 @@ bool LoopClosing::ComputeSim3()
     }
 
     // Find more matches projecting with the computed Sim3
-    // Step 4：将闭环关键帧及其共视关键帧的所有地图点投影到当前关键帧进行投影匹配
+    // Step 4：将闭环关键帧及其连接关键帧的所有地图点投影到当前关键帧进行投影匹配
     // 根据投影查找更多的匹配（成功的闭环匹配需要满足足够多的匹配特征点数）
     // 根据Sim3变换，将每个mvpLoopMapPoints投影到mpCurrentKF上，搜索新的匹配对
     // mvpCurrentMatchedPoints是前面经过SearchBySim3得到的已经匹配的点对，这里就忽略不再匹配了
@@ -577,7 +577,7 @@ bool LoopClosing::ComputeSim3()
     matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);
 
     // If enough matches accept Loop
-    // Step 5: 统计当前帧与检测出的所有闭环关键帧的匹配地图点数目，超过40个说明成功闭环，否则失败
+    // Step 5: 统计当前帧与闭环关键帧的匹配地图点数目，超过40个说明成功闭环，否则失败
     int nTotalMatches = 0;
     for(size_t i=0; i<mvpCurrentMatchedPoints.size(); i++)
     {
@@ -685,7 +685,7 @@ void LoopClosing::CorrectLoop()
         // 锁定地图点
         unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
-        // Step 2.1：通过mg2oScw（认为是准的）来进行位姿传播，得到当前关键帧的共视关键帧的世界坐标系下Sim3 位姿（还没有修正）
+        // Step 2.1：通过mg2oScw（认为是准的）来进行位姿传播，得到当前关键帧的共视关键帧的世界坐标系下Sim3 位姿
         // 遍历"当前关键帧组""
         for(vector<KeyFrame*>::iterator vit=mvpCurrentConnectedKFs.begin(), vend=mvpCurrentConnectedKFs.end(); vit!=vend; vit++)
         {
@@ -717,14 +717,16 @@ void LoopClosing::CorrectLoop()
         }
 
         // Correct all MapPoints obsrved by current keyframe and neighbors, so that they align with the other side of the loop
-        // Step 2.2：得到矫正的当前关键帧的共视关键帧位姿后，修正这些关键帧的地图点
+        // Step 2.2：得到矫正的当前关键帧的共视关键帧位姿后，修正这些共视关键帧的地图点
         // 遍历待矫正的共视关键帧（不包括当前关键帧）
         for(KeyFrameAndPose::iterator mit=CorrectedSim3.begin(), mend=CorrectedSim3.end(); mit!=mend; mit++)
         {
+            // 取出当前关键帧连接关键帧
             KeyFrame* pKFi = mit->first;
+            // 取出经过位姿传播后的Sim3变换
             g2o::Sim3 g2oCorrectedSiw = mit->second;
             g2o::Sim3 g2oCorrectedSwi = g2oCorrectedSiw.inverse();
-
+            // 取出未经过位姿传播的Sim3变换
             g2o::Sim3 g2oSiw =NonCorrectedSim3[pKFi];
 
             vector<MapPoint*> vpMPsi = pKFi->GetMapPointMatches();
@@ -732,11 +734,13 @@ void LoopClosing::CorrectLoop()
             for(size_t iMP=0, endMPi = vpMPsi.size(); iMP<endMPi; iMP++)
             {
                 MapPoint* pMPi = vpMPsi[iMP];
+                // 跳过无效的地图点
                 if(!pMPi)
                     continue;
                 if(pMPi->isBad())
                     continue;
-                if(pMPi->mnCorrectedByKF==mpCurrentKF->mnId) // 标记，防止重复矫正
+                // 标记，防止重复矫正
+                if(pMPi->mnCorrectedByKF==mpCurrentKF->mnId) 
                     continue;
 
                 // 矫正过程本质上也是基于当前关键帧的优化后的位姿展开的
@@ -745,7 +749,7 @@ void LoopClosing::CorrectLoop()
                 cv::Mat P3Dw = pMPi->GetWorldPos();
                 // 地图点世界坐标系下坐标
                 Eigen::Matrix<double,3,1> eigP3Dw = Converter::toVector3d(P3Dw);
-                // map(P) 内部做了变换 R*P +t  
+                // map(P) 内部做了相似变换 s*R*P +t  
                 // 下面变换是：eigP3Dw： world →g2oSiw→ i →g2oCorrectedSwi→ world
                 Eigen::Matrix<double,3,1> eigCorrectedP3Dw = g2oCorrectedSwi.map(g2oSiw.map(eigP3Dw));
 
@@ -819,7 +823,7 @@ void LoopClosing::CorrectLoop()
 
 
     // After the MapPoint fusion, new links in the covisibility graph will appear attaching both sides of the loop
-    // Step 5：更新当前关键帧之间的共视相连关系，得到因闭环时MapPoints融合而新得到的连接关系
+    // Step 5：更新当前关键帧组之间的两级共视相连关系，得到因闭环时地图点融合而新得到的连接关系
     // LoopConnections：存储因为闭环地图点调整而新生成的连接关系
     map<KeyFrame*, set<KeyFrame*> > LoopConnections;
 
@@ -848,7 +852,8 @@ void LoopClosing::CorrectLoop()
     }
 
     // Optimize graph
-    // Step 6：进行EssentialGraph优化，LoopConnections是形成闭环后新生成的连接关系，不包括步骤7中当前帧与闭环匹配帧之间的连接关系
+    // Step 6：进行本质图优化，优化本质图中所有关键帧的位姿和地图点
+    // LoopConnections是形成闭环后新生成的连接关系，不包括步骤7中当前帧与闭环匹配帧之间的连接关系
     Optimizer::OptimizeEssentialGraph(mpMap, mpMatchedKF, mpCurrentKF, NonCorrectedSim3, CorrectedSim3, LoopConnections, mbFixScale);
 
     // Add loop edge
@@ -1013,7 +1018,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
             unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
             // Correct keyframes starting at map first keyframe
-            // 看上去是链表，其实只保存了初始化第一个关键帧
+            // 从第一个关键帧开始矫正关键帧。刚开始只保存了初始化第一个关键帧
             list<KeyFrame*> lpKFtoCheck(mpMap->mvpKeyFrameOrigins.begin(),mpMap->mvpKeyFrameOrigins.end());
 
             // 问：GBA里锁住第一个关键帧位姿没有优化，其对应的pKF->mTcwGBA是不变的吧？那后面调整位姿的意义何在？
@@ -1043,8 +1048,9 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                     }
                     lpKFtoCheck.push_back(pChild);
                 }
-                // 更新当前关键帧的位姿
+                // 记录未矫正的关键帧的位姿
                 pKF->mTcwBefGBA = pKF->GetPose();
+                // 记录已经矫正的关键帧的位姿
                 pKF->SetPose(pKF->mTcwGBA);
                 // 从列表中移除
                 lpKFtoCheck.pop_front();
@@ -1061,15 +1067,15 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 if(pMP->isBad())
                     continue;
 
-                // 注意并不是所有的地图点都会直接参与到全局BA优化中,但是大部分的地图点需要根据全局BA优化后的结果来重新纠正自己的位姿
                 // 如果这个地图点直接参与到了全局BA优化的过程,那么就直接重新设置器位姿即可
                 if(pMP->mnBAGlobalForKF==nLoopKF)
                 {
                     // If optimized by Global BA, just update
                     pMP->SetWorldPos(pMP->mPosGBA);
                 }
-                else // 如故这个地图点并没有直接参与到全局BA优化的过程中,那么就使用其参考关键帧的新位姿来优化自己的坐标
+                else 
                 {
+                    // 如这个地图点并没有直接参与到全局BA优化的过程中,那么就使用其参考关键帧的新位姿来优化自己的坐标
                     // Update according to the correction of its reference keyframe
                     KeyFrame* pRefKF = pMP->GetReferenceKeyFrame();
 
@@ -1093,7 +1099,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 }
             }
 
-            // 释放,使得LocalMapping线程重新开始工作
+            // 释放
             mpLocalMapper->Release();
 
             cout << "Map updated!" << endl;
@@ -1101,7 +1107,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
 
         mbFinishedGBA = true;
         mbRunningGBA = false;
-    } // 更新(几乎)所有的关键帧和地图点
+    } 
 }
 
 // 由外部线程调用,请求终止当前线程

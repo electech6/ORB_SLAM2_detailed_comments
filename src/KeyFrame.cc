@@ -646,14 +646,14 @@ void KeyFrame::SetBadFlag()
         }
     }
 
-    // Step 2 遍历所有和当前关键帧共视的关键帧，删除他们与当前关键帧的联系
+    // Step 2 遍历所有和当前关键帧相连的关键帧，删除他们与当前关键帧的联系
     for(map<KeyFrame*,int>::iterator mit = mConnectedKeyFrameWeights.begin(), mend=mConnectedKeyFrameWeights.end(); mit!=mend; mit++)
-        mit->first->EraseConnection(this); // 让其它的KeyFrame删除与自己的联系
+        mit->first->EraseConnection(this); // 让其它的关键帧删除与自己的联系
 
     // Step 3 遍历每一个当前关键帧的地图点，删除每一个地图点和当前关键帧的联系
     for(size_t i=0; i<mvpMapPoints.size(); i++)
         if(mvpMapPoints[i])
-            mvpMapPoints[i]->EraseObservation(this); // 让与自己有联系的MapPoint删除与自己的联系
+            mvpMapPoints[i]->EraseObservation(this); 
 
     {
         unique_lock<mutex> lock(mMutexConnections);
@@ -664,15 +664,15 @@ void KeyFrame::SetBadFlag()
         mvpOrderedConnectedKeyFrames.clear();
 
         // Update Spanning Tree 
-        // Step 4 更新生成树，主要是处理好父子关键帧，不然会造成整个关键帧维护的图断裂，或者混乱，不能够为后端提供较好的初值
-        // 子关键帧候选父关键帧
+        // Step 4 更新生成树，主要是处理好父子关键帧，不然会造成整个关键帧维护的图断裂，或者混乱
+        // 候选父关键帧
         set<KeyFrame*> sParentCandidates;
         // 将当前帧的父关键帧放入候选父关键帧
         sParentCandidates.insert(mpParent);
 
         // Assign at each iteration one children with a parent (the pair with highest covisibility weight)
         // Include that children as new parent candidate for the rest
-        // 如果这个关键帧有自己的子关键帧，告诉这些子关键帧，它们的父关键帧不行了，赶紧找新的父关键帧
+        // 每迭代一次就为其中一个子关键帧寻找父关键帧（最高共视程度），找到父的子关键帧可以作为其他子关键帧的候选父关键帧
         while(!mspChildrens.empty())
         {
             bool bContinue = false;
@@ -695,10 +695,10 @@ void KeyFrame::SetBadFlag()
 
                 for(size_t i=0, iend=vpConnected.size(); i<iend; i++)
                 {
-                    // sParentCandidates 中刚开始存的是“爷爷”
+                    // sParentCandidates 中刚开始存的是这里子关键帧的“爷爷”，也是当前关键帧的候选父关键帧
                     for(set<KeyFrame*>::iterator spcit=sParentCandidates.begin(), spcend=sParentCandidates.end(); spcit!=spcend; spcit++)
                     {
-                        // Step 4.3 如果孩子和候选的父节点共视，说明找到了备选的父节点
+                        // Step 4.3 如果孩子和sParentCandidates中有共视，选择共视最强的那个作为新的父
                         if(vpConnected[i]->mnId == (*spcit)->mnId)
                         {
                             int w = pKF->GetWeight(vpConnected[i]);
@@ -741,14 +741,13 @@ void KeyFrame::SetBadFlag()
             }
 
         mpParent->EraseChild(this);
-        // 如果当前的关键帧要被删除的话就要计算这个,表示原父关键帧到当前关键帧的位姿变换
-        // 注意在这个删除的过程中,其实并没有将当前关键帧中存储的父关键帧的指针删除掉
+        // mTcp 表示原父关键帧到当前关键帧的位姿变换，在保存位姿的时候使用
         mTcp = Tcw*mpParent->GetPoseInverse();
-        // 标记当前关键帧已经死了
+        // 标记当前关键帧已经挂了
         mbBad = true;
-    }   //退出互斥锁的保护区域
+    }  
 
-
+    // 地图和关键帧数据库中删除该关键帧
     mpMap->EraseKeyFrame(this);
     mpKeyFrameDB->erase(this);
 }

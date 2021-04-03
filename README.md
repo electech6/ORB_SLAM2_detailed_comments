@@ -15,11 +15,12 @@
 
 [ORB-SLAM源码讲解专题4: 单目Tracking线程](https://www.bilibili.com/video/BV1Gt4y1D7HD)
 
-[ORBSLAM2源码讲解专题5：理解共视图、本质图、扩展树](https://www.bilibili.com/video/BV1e54y1278y)
+[ORBSLAM2源码讲解专题5：理解共视图、本质图、生成树](https://www.bilibili.com/video/BV1e54y1278y)
 
 [ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
 
-全网最详细的ORB-SLAM2精讲：原理推导+逐行代码分析，请：[点击查看](https://mp.weixin.qq.com/s/O97PGWgSFb_xuXOQ7yHH7A)，
+全网最详细的ORB-SLAM2精讲：原理推导+逐行代码分析，目前60讲已经全部更新完毕！：[点击查看](https://mp.weixin.qq.com/s/bl_vzX8phRjW1p1-xU5kpQ)，
+课程介绍及购买：[点击](https://appafc4omci9700.h5.xiaoeknow.com)，课程咨询QQ群：1059370110
 课程大纲如下：
 
 第01讲-ORB-SLAM2优点、流程框架介绍、运行注意事项、可视化结果分析

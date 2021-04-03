@@ -405,7 +405,7 @@ void System::Shutdown()
     // Wait until all thread have effectively stopped
     while(!mpLocalMapper->isFinished() || 
     	  !mpLoopCloser->isFinished()  || 
-    	   mpLoopCloser->isRunningGBA())			//说实在话不是很理解这个 TODO isRunningGBA函数是用来做什么的？
+    	   mpLoopCloser->isRunningGBA())			
     {
         usleep(5000);
     }
