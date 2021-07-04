@@ -850,7 +850,7 @@ void Frame::ComputeStereoMatches()
 	// orb特征相似度阈值  -> mean ～= (max  + min) / 2
     const int thOrbDist = (ORBmatcher::TH_HIGH+ORBmatcher::TH_LOW)/2;
 
-    // 金字塔顶层（0层）图像高 nRows
+    // 金字塔底层（0层）图像高 nRows
     const int nRows = mpORBextractorLeft->mvImagePyramid[0].rows;
 
 	// 二维vector存储每一行的orb特征点的列坐标，为什么是vector，因为每一行的特征点有可能不一样，例如
@@ -862,7 +862,7 @@ void Frame::ComputeStereoMatches()
 	// 右图特征点数量，N表示数量 r表示右图，且不能被修改
     const int Nr = mvKeysRight.size();
 
-	// Step 1. 行特征点统计. 考虑到尺度金字塔特征，一个特征点可能存在于多行，而非唯一的一行
+	// Step 1. 行特征点统计。 考虑用图像金字塔尺度作为偏移，左图中对应右图的一个特征点可能存在于多行，而非唯一的一行
     for(int iR = 0; iR < Nr; iR++) {
 
         // 获取特征点ir的y坐标，即行号
@@ -880,15 +880,15 @@ void Frame::ComputeStereoMatches()
             vRowIndices[yi].push_back(iR);
     }
 
-    // Step 2 -> 3. 粗匹配 + 精匹配
+    // 下面是 粗匹配 + 精匹配的过程
     // 对于立体矫正后的两张图，在列方向(x)存在最大视差maxd和最小视差mind
     // 也即是左图中任何一点p，在右图上的匹配点的范围为应该是[p - maxd, p - mind], 而不需要遍历每一行所有的像素
     // maxd = baseline * length_focal / minZ
     // mind = baseline * length_focal / maxZ
 
     const float minZ = mb;
-    const float minD = 0;			 
-    const float maxD = mbf/minZ; 
+    const float minD = 0;			// 最小视差为0，对应无穷远 
+    const float maxD = mbf/minZ;    // 最大视差对应的距离是相机的基线
 
     // 保存sad块匹配相似度和左图特征点索引
     vector<pair<int, int> > vDistIdx;
@@ -918,13 +918,13 @@ void Frame::ComputeStereoMatches()
         size_t bestIdxR = 0;
         const cv::Mat &dL = mDescriptors.row(iL);
         
-        // Step2. 粗配准. 左图特征点il与右图中的可能的匹配点进行逐个比较,得到最相似匹配点的相似度和索引
+        // Step 2. 粗配准。左图特征点il与右图中的可能的匹配点进行逐个比较,得到最相似匹配点的描述子距离和索引
         for(size_t iC=0; iC<vCandidates.size(); iC++) {
 
             const size_t iR = vCandidates[iC];
             const cv::KeyPoint &kpR = mvKeysRight[iR];
 
-            // 左图特征点il与带匹配点ic的空间尺度差超过2，放弃
+            // 左图特征点il与待匹配点ic的空间尺度差超过2，放弃
             if(kpR.octave<levelL-1 || kpR.octave>levelL+1)
                 continue;
 
@@ -946,10 +946,9 @@ void Frame::ComputeStereoMatches()
             }
         }
     
-        
-        // 如果刚才匹配过程中的最佳描述子距离小于给定的阈值
-        // Step 3. 精确匹配. 
+        // Step 3. 图像块滑动窗口用SAD(Sum of absolute differences，差的绝对和)实现精确匹配. 
         if(bestDist<thOrbDist) {
+            // 如果刚才匹配过程中的最佳描述子距离小于给定的阈值
             // 计算右图特征点x坐标和对应的金字塔尺度
             const float uR0 = mvKeysRight[bestIdxR].pt.x;
             const float scaleFactor = mvInvScaleFactors[kpL.octave];
@@ -963,7 +962,7 @@ void Frame::ComputeStereoMatches()
             // w表示sad相似度的窗口半径
             const int w = 5;
 
-            // 提取左图中，以特征点(scaleduL,scaledvL)为中心, 半径为w的图像快patch
+            // 提取左图中，以特征点(scaleduL,scaledvL)为中心, 半径为w的图像块patch
             cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
             IL.convertTo(IL,CV_32F);
             
@@ -988,6 +987,7 @@ void Frame::ComputeStereoMatches()
             // 列方向终点 eniu = r0 + 最大窗口滑动范围 + 图像块尺寸 + 1
             // 此次 + 1 和下面的提取图像块是列坐标+1是一样的，保证提取的图像块的宽是2 * w + 1
             // ! 源码： const float iniu = scaleduR0+L-w; 错误
+            // scaleduR0：右图特征点x坐标
             const float iniu = scaleduR0-L-w;
             const float endu = scaleduR0+L+w+1;
 
@@ -998,14 +998,14 @@ void Frame::ComputeStereoMatches()
 			// 在搜索范围内从左到右滑动，并计算图像块相似度
             for(int incR=-L; incR<=+L; incR++) {
 
-                // 提取左图中，以特征点(scaleduL,scaledvL)为中心, 半径为w的图像快patch
+                // 提取右图中，以特征点(scaleduL,scaledvL)为中心, 半径为w的图像快patch
                 cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
                 IR.convertTo(IR,CV_32F);
                 
                 // 图像块均值归一化，降低亮度变化对相似度计算的影响
                 IR = IR - IR.at<float>(w,w) * cv::Mat::ones(IR.rows,IR.cols,CV_32F);
                 
-                // sad 计算
+                // sad 计算，值越小越相似
                 float dist = cv::norm(IL,IR,cv::NORM_L1);
 
                 // 统计最小sad和偏移量
@@ -1022,7 +1022,7 @@ void Frame::ComputeStereoMatches()
             if(bestincR==-L || bestincR==L)
                 continue;
 
-			// Step 4. 亚像素插值, 使用最佳匹配点及其左右相邻点构成抛物线
+			// Step 4. 亚像素插值, 使用最佳匹配点及其左右相邻点构成抛物线来得到最小sad的亚像素坐标
             // 使用3点拟合抛物线的方式，用极小值代替之前计算的最优是差值
             //    \                 / <- 由视差为14，15，16的相似度拟合的抛物线
             //      .             .(16)
