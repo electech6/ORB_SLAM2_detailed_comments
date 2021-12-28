@@ -160,11 +160,11 @@ public:
     // Tracking states
     ///跟踪状态类型
     enum eTrackingState{
-        SYSTEM_NOT_READY=-1,        ///<系统没有准备好的状态,一般就是在启动后加载配置文件和词典文件时候的状态
-        NO_IMAGES_YET=0,            ///<当前无图像
-        NOT_INITIALIZED=1,          ///<有图像但是没有完成初始化
-        OK=2,                       ///<正常时候的工作状态
-        LOST=3                      ///<系统已经跟丢了的状态
+        SYSTEM_NOT_READY=-1,        //系统没有准备好的状态,一般就是在启动后加载配置文件和词典文件时候的状态
+        NO_IMAGES_YET=0,            //当前无图像
+        NOT_INITIALIZED=1,          //有图像但是没有完成初始化
+        OK=2,                       //正常时候的工作状态
+        LOST=3                      //系统已经跟丢了的状态
     };
 
     ///跟踪状态

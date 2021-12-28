@@ -102,7 +102,7 @@ void KeyFrameDatabase::clear()
 
 /**
  * @brief 在闭环检测中找到与该关键帧可能闭环的关键帧（注意不和当前帧连接）
- * Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接（也就是共视）的关键帧
+ * Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接的关键帧
  * Step 2：只和具有共同单词较多的（最大数目的80%以上）关键帧进行相似度计算 
  * Step 3：计算上述候选帧对应的共视关键帧组的总得分，只取最高组得分75%以上的组
  * Step 4：得到上述组中分数最高的关键帧作为闭环候选关键帧
@@ -121,7 +121,7 @@ vector<KeyFrame*> KeyFrameDatabase::DetectLoopCandidates(KeyFrame* pKF, float mi
 
     // Search all keyframes that share a word with current keyframes
     // Discard keyframes connected to the query keyframe
-    // Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接（也就是共视）的关键帧
+    // Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接的关键帧
     {
         unique_lock<mutex> lock(mMutex);
 
@@ -244,7 +244,7 @@ vector<KeyFrame*> KeyFrameDatabase::DetectLoopCandidates(KeyFrame* pKF, float mi
     vector<KeyFrame*> vpLoopCandidates;
     vpLoopCandidates.reserve(lAccScoreAndMatch.size());
 
-    // Step 5：只取组得分大于阈值的组，得到组中分数最高的关键帧作为闭环候选关键帧
+    // Step 5：只取组得分大于阈值的组，得到组中分数最高的关键帧们作为闭环候选关键帧
     for(list<pair<float,KeyFrame*> >::iterator it=lAccScoreAndMatch.begin(), itend=lAccScoreAndMatch.end(); it!=itend; it++)
     {
         if(it->first>minScoreToRetain)

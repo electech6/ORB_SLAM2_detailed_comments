@@ -220,7 +220,6 @@ void LocalMapping::ProcessNewKeyFrame()
                 }
                 else // this can only happen for new stereo points inserted by the Tracking
                 {
-                    // 如果当前帧中已经包含了这个地图点,但是这个地图点中却没有包含这个关键帧的信息
                     // 这些地图点可能来自双目或RGBD跟踪过程中新生成的地图点，或者是CreateNewMapPoints 中通过三角化产生
                     // 将上述地图点放入mlpRecentAddedMapPoints，等待后续MapPointCulling函数的检验
                     mlpRecentAddedMapPoints.push_back(pMP); 
