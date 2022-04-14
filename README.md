@@ -3,32 +3,10 @@
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
 
-附部分内容讲解视频：
+独家课程《ORB-SLAM2精讲：原理推导+逐行代码分析》！官网：cvlife.net
 
-[ORBSLAM2新手必看：简介、安装、运行](https://www.bilibili.com/video/BV1DV411z7mY)
-
-[ORBSLAM2源码讲解专题1：ORB特征点提取与均匀化策略](https://www.bilibili.com/video/BV1154y1D7tA)
-
-[ORBSLAM2源码讲解专题2：Oriented Fast神奇高效的代码实现方式](https://www.bilibili.com/video/BV1FZ4y1H7JH)
-
-[ORB-SLAM源码讲解专题3：ORBSLAM2的单目初始化](https://www.bilibili.com/video/BV1HT4y1j7W3)
-
-[ORB-SLAM源码讲解专题4: 单目Tracking线程](https://www.bilibili.com/video/BV1Gt4y1D7HD)
-
-[ORBSLAM2源码讲解专题5：理解共视图、本质图、生成树](https://www.bilibili.com/video/BV1e54y1278y)
-
-[ORBSLAM2原理代码详解19- 图像描述子转化为BowVector和FeatureVector](https://www.bilibili.com/video/BV17K4y1Y7DJ)
-
-独家课程《ORB-SLAM2精讲：原理推导+逐行代码分析》！[点击查看](https://appafc4omci9700.h5.xiaoeknow.com)
-《ORB-SLAM2源码解析》学习手册下载
-SLAM交流群：添加微信 chichui502，备注：”昵称+学校/公司+研究方向“。请按照格式备注，否则不予通过。请勿在群内发送广告，否则会请出群，谢谢理解~
 课程大纲如下：
 ![大纲](https://github.com/electech6/ORB_SLAM2_detailed_comments/blob/master/outline.png)
-
-
-关注公众号：计算机视觉life，第一时间获取SLAM、三维视觉干货
-
-![qrcode](https://github.com/electech6/ORBSLAM2_detailed_comments/blob/master/myqrcode.png)
 
 ----
 

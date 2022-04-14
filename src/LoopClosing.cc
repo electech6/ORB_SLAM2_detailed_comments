@@ -858,7 +858,7 @@ void LoopClosing::CorrectLoop()
 
     // Add loop edge
     // Step 7：添加当前帧与闭环匹配帧之间的边（这个连接关系不优化）
-    // 它在下一次的Essential Graph里面使用
+    // 它在下一次的本质图优化里面使用
     mpMatchedKF->AddLoopEdge(mpCurrentKF);
     mpCurrentKF->AddLoopEdge(mpMatchedKF);
 
