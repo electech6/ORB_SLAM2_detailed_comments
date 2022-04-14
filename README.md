@@ -3,7 +3,7 @@
 -by 计算机视觉life 公众号旗下开源学习小组：SLAM研习社
 
 
-独家课程《ORB-SLAM2精讲：原理推导+逐行代码分析》！官网：cvlife.net
+独家课程《ORB-SLAM2精讲：原理推导+逐行代码分析》！ [点击查看官网](https://cvlife.net/)
 
 课程大纲如下：
 ![大纲](https://github.com/electech6/ORB_SLAM2_detailed_comments/blob/master/outline.png)
