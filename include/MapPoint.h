@@ -300,8 +300,8 @@ protected:
     KeyFrame* mpRefKF;
 
     /// Tracking counters
-    int mnVisible;
-    int mnFound;
+    int mnVisible;// 地图点应该被看到的次数
+    int mnFound;//地图点被多少帧（包括普通帧）看到，次数越多越好
 
     /// Bad flag (we do not currently erase MapPoint from memory)
     bool mbBad;

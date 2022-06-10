@@ -57,9 +57,9 @@ public:
     /**
      * @brief 描述子矩阵到单行的描述子向量的转换. 
      * @details cv::Mat -> std::vector<cv::Mat> \n
-     * 转换后的结果就是吧cv::Mat的每一行直接串联起来。
+     * 转换后的结果就是把cv::Mat的每一行直接串联起来。
      * 
-     * @param[in] Descriptors 待转换的描述子
+     * @param[in] Descriptors 待转换的描述子cv::Mat
      * @return std::vector<cv::Mat> 转换结果
      * @note  应当注意，这里的描述子矩阵是多个单行的cv::Mat组成的。
      */

@@ -80,6 +80,14 @@ void Optimizer::GlobalBundleAdjustemnt(Map* pMap, int nIterations, bool* pbStopF
  *         + measurement：MapPoint在当前帧中的二维位置(u,v)
  *         + InfoMatrix: invSigma2(与特征点所在的尺度有关)
  * 
+ *  图优化框架从底层到顶层进行逐一搭建：
+ *  1. 创建一个线性求解器LinearSolver。
+ *  2. 创建BlockSolver，并用上面定义的线性求解器初始化。
+ *  3. 创建总求解器solver，并从GN/LM/DogLeg 中选一个作为迭代策略，再用上述块求解器BlockSolver初始化。
+ *  4. 创建图优化的核心：稀疏优化器（SparseOptimizer）。
+ *  5. 定义图的顶点和边，并添加到SparseOptimizer中。
+ *  6. 设置优化参数，开始执行优化。
+ * 
  * @param[in] vpKFs                 参与BA的所有关键帧
  * @param[in] vpMP                  参与BA的所有地图点
  * @param[in] nIterations           优化迭代次数
@@ -92,16 +100,30 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 {
     // 不参与优化的地图点
     vector<bool> vbNotIncludedMP;
-    vbNotIncludedMP.resize(vpMP.size());
+    vbNotIncludedMP.resize(vpMP.size());//pMP  参与BA的所有地图点
+    // 关于这部分的内容补充：可以查看学习手册pdf版本中的ORB-SLAM源码解析BA优化：
+    // SparseOptimizer是整个图的核心
 
-    // Step 1 初始化g2o优化器
-    g2o::SparseOptimizer optimizer;
-    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
-    linearSolver = new g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType>();
+
+    /*        Step 1 初始化g2o优化器          */
+    
+    // BlockSolver求解器是由两部分组成：（可通过继承关系图来查看）
+    // 1. 线性方程的求解器（LinearSolver），可用于计算稀迭代过程中最关键的一步：HΔx=−b;LinearSolver有几种方法可以选择：PCG, CSparse, Choldmod ？？？
+    // 2. SparseBlockMatrix ，用于计算稀疏的雅可比和Hessian矩阵
+    // 关于如何去实现G2o的编程：
+    // 1) 创建线性求解器linearSolver
+    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;//BlockSolver_6_3 ：表示pose 是6维，观测点是3维
+    linearSolver = new g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType>();//依赖项只有 eigen，使用 eigen 中 sparse Cholesky 求解，因此编译好后可以方便的在其他地方使用，性能和 CSparse 差不多，继承自 LinearSolver；
+
+    // 2） 创建BlockSolver6_3。并用上面定义的线性求解器初始化
     g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
+    // 3）第3步：创建总求解器solver。并从GN, LM, DogLeg 中选一个，再用上述块求解器BlockSolver6_3初始化
     // 使用LM算法优化
     g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    optimizer.setAlgorithm(solver);
+    // 4) 第4步：创建图优化的终极大boss 稀疏优化器（SparseOptimizer）
+    g2o::SparseOptimizer optimizer;//图模型 位姿优化图，就是稀疏优化器,是核心部分
+    optimizer.setAlgorithm(solver);// 创建并设置总求解器
+    // optimizer.setVerbose( true );       // 打开调试输出
 
     // 如果这个时候外部请求终止，那就结束
     // 注意这句执行之后，外部再请求结束BA，就结束不了了
@@ -111,9 +133,8 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
     // 记录添加到优化器中的顶点的最大关键帧id
     long unsigned int maxKFid = 0;
 
-    // Step 2 向优化器添加顶点
+    // Step 2 向优化器添加顶点  Set KeyFrame vertices
 
-    // Set KeyFrame vertices
     // Step 2.1 ：向优化器添加关键帧位姿顶点
     // 遍历当前地图中的所有关键帧
     for(size_t i=0; i<vpKFs.size(); i++)
@@ -123,12 +144,20 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         if(pKF->isBad())
             continue;
         
+
+        // 5）定义图的顶点和边，并添加到SparseOptimizer中
+        // 在双视图的BA中，有两种结点：相机位姿结点和特征点的空间位置结点，相应的边主要表示空间点到像素坐标的投影关系
+        // 旋转矩阵R可以与另一个反对称矩阵，有指数关系产生联系：
+        // 这一部分的内容需要参考视觉slam14讲的第四章 李群和李代数
         // 对于每一个能用的关键帧构造SE3顶点,其实就是当前关键帧的位姿
-        g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();
-        vSE3->setEstimate(Converter::toSE3Quat(pKF->GetPose()));
+        // 其中se3代表的就是李代数 代表的是变换矩阵的群
+        // 此处为结点1：相机位姿结点
+        g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();//SE3 Vertex 内部参数化为变换矩阵，外部参数化为指数图
+        // 设置预设值为从当前关键帧中得到的位姿 
+        vSE3->setEstimate(Converter::toSE3Quat(pKF->GetPose()));//将关键帧以李代数的方式进行存储
         // 顶点的id就是关键帧在所有关键帧中的id
         vSE3->setId(pKF->mnId); 
-        // 只有第0帧关键帧不优化（参考基准）
+        // 只有第0帧关键帧不优化（参考基准），设定固定为0
         vSE3->setFixed(pKF->mnId==0);
 
         // 向优化器中添加顶点，并且更新maxKFid
@@ -137,16 +166,16 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
             maxKFid=pKF->mnId;
     }
 
-    // 卡方分布 95% 以上可信度的时候的阈值
-    const float thHuber2D = sqrt(5.99);     // 自由度为2
-    const float thHuber3D = sqrt(7.815);    // 自由度为3
+    // 卡方分布 95% 以上可信度的时候的阈值--sqrt平方根计算
+    const float thHuber2D = sqrt(5.99);     // 自由度为2，显著性为0.05，对应的拒绝域为5.99
+    const float thHuber3D = sqrt(7.815);    // 自由度为3，显著性为0.05，对应的拒绝域为7.815
 
     // Set MapPoint vertices
     // Step 2.2：向优化器添加地图点作为顶点
     // 遍历地图中的所有地图点
     for(size_t i=0; i<vpMP.size(); i++)
     {
-        MapPoint* pMP = vpMP[i];
+        MapPoint* pMP = vpMP[i];//所有地图点
         // 跳过无效地图点
         if(pMP->isBad())
             continue;
@@ -154,18 +183,19 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         // 创建顶点
         g2o::VertexSBAPointXYZ* vPoint = new g2o::VertexSBAPointXYZ();
         // 注意由于地图点的位置是使用cv::Mat数据类型表示的,这里需要转换成为Eigen::Vector3d类型
-        vPoint->setEstimate(Converter::toVector3d(pMP->GetWorldPos()));
+        vPoint->setEstimate(Converter::toVector3d(pMP->GetWorldPos()));// 设置预设值为从当前地图点在世界坐标系下的坐标位置
         // 前面记录maxKFid 是在这里使用的
         const int id = pMP->mnId+maxKFid+1;
-        vPoint->setId(id);
+        vPoint->setId(id);//设置顶点的ID值
+    
         // 注意g2o在做BA的优化时必须将其所有地图点全部schur掉，否则会出错。
         // 原因是使用了g2o::LinearSolver<BalBlockSolver::PoseMatrixType>这个类型来指定linearsolver,
         // 其中模板参数当中的位姿矩阵类型在程序中为相机姿态参数的维度，于是BA当中schur消元后解得线性方程组必须是只含有相机姿态变量。
-        // Ceres库则没有这样的限制
-        vPoint->setMarginalized(true);
+        // Ceres库则没有这样的限制   g2o参考：https://zhuanlan.zhihu.com/p/37843131
+        vPoint->setMarginalized(true);//把特征点设置为marginalize，先计算相机位姿增量，在计算特征位姿增量
         optimizer.addVertex(vPoint);
 
-        // 取出地图点和关键帧之间观测的关系
+        // 取出地图点id和关键帧之间观测的关系  <KeyFrame*,size_t>
         const map<KeyFrame*,size_t> observations = pMP->GetObservations();
 
         // 边计数
@@ -193,28 +223,30 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
                 obs << kpUn.pt.x, kpUn.pt.y;
 
                 // 创建边
-                g2o::EdgeSE3ProjectXYZ* e = new g2o::EdgeSE3ProjectXYZ();
+                g2o::EdgeSE3ProjectXYZ* e = new g2o::EdgeSE3ProjectXYZ();// 二元边
                 // 边连接的第0号顶点对应的是第id个地图点
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(id)));
                 // 边连接的第1号顶点对应的是第id个关键帧
                 e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKF->mnId)));
-                e->setMeasurement(obs);
-                // 信息矩阵，也是协方差，表明了这个约束的观测在各个维度（x,y）上的可信程度，在我们这里对于具体的一个点，两个坐标的可信程度都是相同的，
+                e->setMeasurement(obs);//？？？观测数值
+                // 信息矩阵，也是协方差，表明了这个约束的观测在各个维度（x,y）上的可信程度，
+                // 在我们这里对于具体的一个点，两个坐标的可信程度都是相同的，
                 // 其可信程度受到特征点在图像金字塔中的图层有关，图层越高，可信度越差
                 // 为了避免出现信息矩阵中元素为负数的情况，这里使用的是sigma^(-2)
                 const float &invSigma2 = pKF->mvInvLevelSigma2[kpUn.octave];
-                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
-                // 使用鲁棒核函数
+                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);//Identity单位矩阵，协方差矩阵之逆
+                // 使用鲁棒核函数  引入和函数的原因是SLAM可能给出错误的边，核函数的目的就是将原先误差的二范数度量，替换成没
+                //增长没有那么快的函数，同时保证自己的光滑性质
                 if(bRobust)
                 {
-                    g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
-                    e->setRobustKernel(rk);
+                    g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;//https://en.wikipedia.org/wiki/Huber_loss
+                    e->setRobustKernel(rk);//？？？
                     // 这里的重投影误差，自由度为2，所以这里设置为卡方分布中自由度为2的阈值，如果重投影的误差大约大于1个像素的时候，就认为不太靠谱的点了，
-                    // 核函数是为了避免其误差的平方项出现数值上过大的增长
-                    rk->setDelta(thHuber2D);
+                    // 核函数是为了避免其误差的平方项出现数值上过大的增长，使整个优化的结果更加鲁棒
+                    rk->setDelta(thHuber2D);//？？？
                 }
 
-                // 设置相机内参
+                // 设置相机内参  ？？？ 为什么要加上相机内参
                 e->fx = pKF->fx;
                 e->fy = pKF->fy;
                 e->cx = pKF->cx;
@@ -227,24 +259,28 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
                 // 双目或RGBD相机按照下面操作
                 // 双目相机的观测数据则是由三个部分组成：投影点的x坐标，投影点的y坐标，以及投影点在右目中的x坐标（默认y方向上已经对齐了）
                 Eigen::Matrix<double,3,1> obs;
-                const float kp_ur = pKF->mvuRight[mit->second];
+                const float kp_ur = pKF->mvuRight[mit->second];//投影点在右目中的x坐标
                 obs << kpUn.pt.x, kpUn.pt.y, kp_ur;
 
-                // 对于双目输入，g2o也有专门的误差边
+                // 创建边
+                // 对于双目输入，g2o也有专门的误差边，也是二元边
                 g2o::EdgeStereoSE3ProjectXYZ* e = new g2o::EdgeStereoSE3ProjectXYZ();
                 // 填充
+                // 边连接的第0号顶点对应的是第id个地图点
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(id)));
+                // 边连接的第1号顶点对应的是第id个关键帧
                 e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKF->mnId)));
-                e->setMeasurement(obs);
+                e->setMeasurement(obs);//？？？观测数值
                 // 信息矩阵这里是相同的，考虑的是左目特征点的所在图层
                 const float &invSigma2 = pKF->mvInvLevelSigma2[kpUn.octave];
-                Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;
+                Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;//Identity单位矩阵，协方差矩阵之逆
                 e->setInformation(Info);
 
                 // 如果要使用鲁棒核函数
                 if(bRobust)
                 {
-                    g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+                    // https://www.cnblogs.com/gaoxiang12/p/5244828.html
+                    g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;//https://en.wikipedia.org/wiki/Huber_loss
                     e->setRobustKernel(rk);
                     // 由于现在的观测有三个值，重投影误差会有三个平方项的和组成，因此对应的卡方分布的自由度为3，所以这里设置的也是自由度为3的时候的阈值
                     rk->setDelta(thHuber3D);
@@ -274,9 +310,10 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
     }
 
     // Optimize!
+    // 6）设置优化参数，开始执行优化
     // Step 4：开始优化
-    optimizer.initializeOptimization();
-    optimizer.optimize(nIterations);
+    optimizer.initializeOptimization();//初始化参数设置
+    optimizer.optimize(nIterations);//设置迭代次数
 
     // Recover optimized data
     // Step 5：得到优化的结果
@@ -291,13 +328,13 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         // 获取到优化后的位姿
         g2o::VertexSE3Expmap* vSE3 = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(pKF->mnId));
         g2o::SE3Quat SE3quat = vSE3->estimate();
-        if(nLoopKF==0)
+        if(nLoopKF==0)//nLoopKF形成了闭环的当前关键帧的id
         {
             // 原则上来讲不会出现"当前闭环关键帧是第0帧"的情况,如果这种情况出现,只能够说明是在创建初始地图点的时候调用的这个全局BA函数.
             // 这个时候,地图中就只有两个关键帧,其中优化后的位姿数据可以直接写入到帧的成员变量中
             pKF->SetPose(Converter::toCvMat(SE3quat));
         }
-        else
+        else//nLoopKF形成了闭环的当前关键帧的id
         {
             // 正常的操作,先把优化后的位姿写入到帧的一个专门的成员变量mTcwGBA中备用
             pKF->mTcwGBA.create(4,4,CV_32F);
@@ -339,7 +376,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 }
 
 /*
- * @brief Pose Only Optimization
+ * @brief Pose Only Optimization该优化函数主要用于Tracking线程中：运动跟踪、参考帧跟踪、地图跟踪、重定位
  * 
  * 3D-2D 最小化重投影误差 e = (u,v) - project(Tcw*Pw) \n
  * 只优化Frame的Tcw，不优化MapPoints的坐标
@@ -362,29 +399,41 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 {
     // 该优化函数主要用于Tracking线程中：运动跟踪、参考帧跟踪、地图跟踪、重定位
 
+    // BlockSolver求解器是由两部分组成：（可通过继承关系图来查看）
+    // 1. 线性方程的求解器（LinearSolver），可用于计算稀迭代过程中最关键的一步：HΔx=−b;LinearSolver有几种方法可以选择：PCG, CSparse, Choldmod ？？？
+    // 2. SparseBlockMatrix ，用于计算稀疏的雅可比和Hessian矩阵
+
+    // 关于如何去实现G2o的编程：
     // Step 1：构造g2o优化器, BlockSolver_6_3表示：位姿 _PoseDim 为6维，路标点 _LandmarkDim 是3维
-    g2o::SparseOptimizer optimizer;
-    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
+    // 此处代码被我放到后面去了 g2o::SparseOptimizer optimizer;//设置图模型 位姿优化图，就是稀疏优化器,是核心部分
 
-    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
+    //1) 创建线性求解器linearSolver
+    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;// 线性方程求解器得到 linearSolver
+    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();// 采用 dense cholesky 分解法，继承自 LinearSolver
 
+    //2）创建BlockSolver6_3构造线性方程的矩阵块。并用上面定义的线性求解器初始化
     g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
 
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    optimizer.setAlgorithm(solver);
+    //3）创建总求解器solver。并从GN, LM, DogLeg 中选一个梯度下降方法，再用上述块求解器BlockSolver6_3初始化
+    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);//LM方法
+
+    //4）创建图优化的终极大boss 稀疏优化器（SparseOptimizer）
+    g2o::SparseOptimizer optimizer;// 设置图模型 位姿优化图，就是稀疏优化器,是核心部分
+    optimizer.setAlgorithm(solver);// 创建并设置总求解器
 
     // 输入的帧中,有效的,参与优化过程的2D-3D点对
     int nInitialCorrespondences=0;
 
+    // 定义图的顶点和边，并添加到稀疏优化器中SparseOptimizer
     // Set Frame vertex
     // Step 2：添加顶点：待优化当前帧的Tcw
     g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();
-    vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));
-     // 设置id
+    vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));//初始化顶点的值为pFrame帧的变换矩阵
+     // 设置顶点的编号id
     vSE3->setId(0);    
     // 要优化的变量，所以不能固定
     vSE3->setFixed(false);
-    optimizer.addVertex(vSE3);
+    optimizer.addVertex(vSE3);//向图中添加顶点
 
     // Set MapPoint vertices
     const int N = pFrame->N;
@@ -396,20 +445,20 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     vnIndexEdgeMono.reserve(N);
 
     // for Stereo
-    vector<g2o::EdgeStereoSE3ProjectXYZOnlyPose*> vpEdgesStereo;
-    vector<size_t> vnIndexEdgeStereo;
+    vector<g2o::EdgeStereoSE3ProjectXYZOnlyPose*> vpEdgesStereo;//？？？？？
+    vector<size_t> vnIndexEdgeStereo;//？？？
     vpEdgesStereo.reserve(N);
     vnIndexEdgeStereo.reserve(N);
 
-    // 自由度为2的卡方分布，显著性水平为0.05，对应的临界阈值5.991
+    // 自由度为2的卡方分布，显著性水平为0.05，对应的临界阈值5.991???
     const float deltaMono = sqrt(5.991);  
-    // 自由度为3的卡方分布，显著性水平为0.05，对应的临界阈值7.815   
+    // 自由度为3的卡方分布，显著性水平为0.05，对应的临界阈值7.815   ？？？
     const float deltaStereo = sqrt(7.815);     
 
     // Step 3：添加一元边
     {
     // 锁定地图点。由于需要使用地图点来构造顶点和边,因此不希望在构造的过程中部分地图点被改写造成不一致甚至是段错误
-    unique_lock<mutex> lock(MapPoint::mGlobalMutex);
+    unique_lock<mutex> lock(MapPoint::mGlobalMutex);//？？？
 
     // 遍历当前地图中的所有地图点
     for(int i=0; i<N; i++)
@@ -427,9 +476,9 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
                 // 对这个地图点的观测
                 Eigen::Matrix<double,2,1> obs;
-                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
+                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];//pFrame帧中校正mvKeys后的特征点
                 obs << kpUn.pt.x, kpUn.pt.y;
-                // 新建单目的边，一元边，误差为观测特征点坐标减去投影点的坐标
+                // 新建单目的边，一元边，误差为观测特征点坐标减去投影点的坐标???,其实就是位姿优化时的重投影误差时一元边，仅优化相机的位姿，顶点就是相机的位姿
                 g2o::EdgeSE3ProjectXYZOnlyPose* e = new g2o::EdgeSE3ProjectXYZOnlyPose();
                 // 设置边的顶点
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
@@ -466,11 +515,11 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 //SET EDGE
                 // 观测多了一项右目的坐标
                 Eigen::Matrix<double,3,1> obs;// 这里和单目不同
-                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
+                const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];//pFrame帧中校正mvKeys后的特征点
                 const float &kp_ur = pFrame->mvuRight[i];
                 obs << kpUn.pt.x, kpUn.pt.y, kp_ur;// 这里和单目不同
                 // 新建边，一元边，误差为观测特征点坐标减去投影点的坐标
-                g2o::EdgeStereoSE3ProjectXYZOnlyPose* e = new g2o::EdgeStereoSE3ProjectXYZOnlyPose();// 这里和单目不同
+                g2o::EdgeStereoSE3ProjectXYZOnlyPose* e = new g2o::EdgeStereoSE3ProjectXYZOnlyPose();// 这里和单目不同？？？哪里不同了
 
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
@@ -478,16 +527,19 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
                 Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;
                 e->setInformation(Info);
-
+                // 在这里使用了鲁棒核函数
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
-                rk->setDelta(deltaStereo);
+                rk->setDelta(deltaStereo);// 前面提到过的卡方阈值
 
+                // 设置相机内参
                 e->fx = pFrame->fx;
                 e->fy = pFrame->fy;
                 e->cx = pFrame->cx;
                 e->cy = pFrame->cy;
-                e->bf = pFrame->mbf;
+
+                e->bf = pFrame->mbf;//Stereo baseline multiplied by fx：baseline x *fx
+                // 地图点的空间位置,作为迭代的初始值
                 cv::Mat Xw = pMP->GetWorldPos();
                 e->Xw[0] = Xw.at<float>(0);
                 e->Xw[1] = Xw.at<float>(1);
@@ -512,7 +564,10 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     // Step 4：开始优化，总共优化四次，每次优化迭代10次,每次优化后，将观测分为outlier和inlier，outlier不参与下次优化
     // 由于每次优化后是对所有的观测进行outlier和inlier判别，因此之前被判别为outlier有可能变成inlier，反之亦然
     // 基于卡方检验计算出的阈值（假设测量有一个像素的偏差）
+
+    // 自由度为2的卡方分布，显著性水平为0.05，对应的临界阈值5.991 ？？？
     const float chi2Mono[4]={5.991,5.991,5.991,5.991};          // 单目
+    // 自由度为3的卡方分布，显著性水平为0.05，对应的临界阈值7.815   ？？？
     const float chi2Stereo[4]={7.815,7.815,7.815, 7.815};       // 双目
     const int its[4]={10,10,10,10};// 四次迭代，每次迭代的次数
 
@@ -522,7 +577,9 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     for(size_t it=0; it<4; it++)
     {
 
-        vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));
+        vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));//设置顶点的值为初始位姿
+
+        /* 设置优化的参数，开始执行优化 */
         // 其实就是初始化优化器,这里的参数0就算是不填写,默认也是0,也就是只对level为0的边进行优化
         optimizer.initializeOptimization(0);
         // 开始优化，优化10次
@@ -539,7 +596,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
             // 如果这条误差边是来自于outlier
             if(pFrame->mvbOutlier[idx])
             {
-                e->computeError(); 
+                e->computeError(); //重要，计算当前顶点计算出的测量值与真实的测量值之间的误差；
             }
 
             // 就是error*\Omega*error,表征了这个点的误差大小(考虑置信度以后)
@@ -557,7 +614,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 e->setLevel(0);                 // 设置为inlier, level 0 对应为内点,上面的过程中我们就是要优化这些关系
             }
 
-            if(it==2)
+            if(it==2)//？？？为什么是2而不是>2
                 e->setRobustKernel(0); // 除了前两次优化需要RobustKernel以外, 其余的优化都不需要 -- 因为重投影的误差已经有明显的下降了
         } // 对单目误差边的处理
         // 同样的原理遍历双目的误差边
@@ -569,21 +626,21 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
             if(pFrame->mvbOutlier[idx])
             {
-                e->computeError();
+                e->computeError();//重要，计算当前顶点计算出的测量值与真实的测量值之间的误差
             }
 
-            const float chi2 = e->chi2();
+            const float chi2 = e->chi2();// 就是error*\Omega*error,表征了这个点的误差大小(考虑置信度以后)
 
             if(chi2>chi2Stereo[it])
             {
                 pFrame->mvbOutlier[idx]=true;
-                e->setLevel(1);
+                e->setLevel(1);// 设置为outlier , level 1 对应为外点,上面的过程中我们设置其为不优化
                 nBad++;
             }
             else
             {                
                 e->setLevel(0);
-                pFrame->mvbOutlier[idx]=false;
+                pFrame->mvbOutlier[idx]=false;// 设置为inlier, level 0 对应为内点,上面的过程中我们就是要优化这些关系
             }
 
             if(it==2)
@@ -596,7 +653,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
     // Recover optimized pose and return number of inliers
     // Step 5 得到优化后的当前帧的位姿
-    g2o::VertexSE3Expmap* vSE3_recov = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(0));
+    g2o::VertexSE3Expmap* vSE3_recov = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(0));//?????这是什么函数
     g2o::SE3Quat SE3quat_recov = vSE3_recov->estimate();
     cv::Mat pose = Converter::toCvMat(SE3quat_recov);
     pFrame->SetPose(pose);
@@ -706,9 +763,9 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
 
     // Setup optimizer
     // Step 4 构造g2o优化器
-    g2o::SparseOptimizer optimizer;
-    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
-
+    g2o::SparseOptimizer optimizer;// 设置图模型创建优化器
+    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;// 使用Cholmod中的线性方程求解器得到 linearSolver???
+    // Eigen（sparse Cholesky decoposition from Eigen）
     linearSolver = new g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType>();
 
     g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
@@ -761,6 +818,7 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
     // 边的最大数目 = 位姿数目 * 地图点数目
     const int nExpectedSize = (lLocalKeyFrames.size()+lFixedCameras.size())*lLocalMapPoints.size();
 
+    // 单目顶点vertex
     vector<g2o::EdgeSE3ProjectXYZ*> vpEdgesMono;
     vpEdgesMono.reserve(nExpectedSize);
 
@@ -770,6 +828,7 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
     vector<MapPoint*> vpMapPointEdgeMono;
     vpMapPointEdgeMono.reserve(nExpectedSize);
 
+    // 双目顶点vertex
     vector<g2o::EdgeStereoSE3ProjectXYZ*> vpEdgesStereo;
     vpEdgesStereo.reserve(nExpectedSize);
 
@@ -783,7 +842,7 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
     const float thHuberMono = sqrt(5.991);
 
     // 自由度为3的卡方分布，显著性水平为0.05，对应的临界阈值7.815
-    const float thHuberStereo = sqrt(7.815);
+    const float thHuberStereo = sqrt(7.815);//???不明白卡方分布是什么意思???
 
     // 遍历所有的局部地图点
     for(list<MapPoint*>::iterator lit=lLocalMapPoints.begin(), lend=lLocalMapPoints.end(); lit!=lend; lit++)
@@ -810,7 +869,8 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
             KeyFrame* pKFi = mit->first;
 
             if(!pKFi->isBad())
-            {                
+            {   
+                // 去畸变后的特征点             
                 const cv::KeyPoint &kpUn = pKFi->mvKeysUn[mit->second];
                 // 根据单目/双目两种不同的输入构造不同的误差边
                 // Monocular observation
@@ -819,18 +879,18 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
                 {
                     Eigen::Matrix<double,2,1> obs;
                     obs << kpUn.pt.x, kpUn.pt.y;
-
+                    //设置图优化的边 
                     g2o::EdgeSE3ProjectXYZ* e = new g2o::EdgeSE3ProjectXYZ();
                     // 边的第一个顶点是地图点
                     e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(id)));
-                    // 边的第一个顶点是观测到该地图点的关键帧
+                    // 边的另一个顶点是观测到该地图点的关键帧
                     e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKFi->mnId)));
                     e->setMeasurement(obs);
-                    // 权重为特征点所在图像金字塔的层数的倒数
+                    // 权重为特征点所在图像金字塔的层数中的尺度因子平方的倒数
                     const float &invSigma2 = pKFi->mvInvLevelSigma2[kpUn.octave];
-                    e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+                    e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);//设置信息矩阵，实质上就所在层的尺度因子的平方的倒数
 
-                    // 使用鲁棒核函数抑制外点
+                    // 使用鲁棒核函数抑制外点，防止错误点造成较大的误差
                     g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                     e->setRobustKernel(rk);
                     rk->setDelta(thHuberMono);
@@ -852,15 +912,21 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
                     const float kp_ur = pKFi->mvuRight[mit->second];
                     obs << kpUn.pt.x, kpUn.pt.y, kp_ur;
 
+                    // 设置图优化的边
                     g2o::EdgeStereoSE3ProjectXYZ* e = new g2o::EdgeStereoSE3ProjectXYZ();
-
+                    // 边连接的一个顶点是地图点
                     e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(id)));
+                    // 边连接的另一个顶点是关键帧
                     e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKFi->mnId)));
                     e->setMeasurement(obs);
+                    
+                    // 设置信息矩阵--就是权重系数
+                    // 权重为特征点所在图像金字塔的层数中的尺度因子平方的倒数
                     const float &invSigma2 = pKFi->mvInvLevelSigma2[kpUn.octave];
                     Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;
                     e->setInformation(Info);
 
+                    // 设置鲁棒核系数，抑制外点
                     g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                     e->setRobustKernel(rk);
                     rk->setDelta(thHuberStereo);
@@ -870,7 +936,7 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
                     e->cx = pKFi->cx;
                     e->cy = pKFi->cy;
                     e->bf = pKFi->mbf;
-
+                    // 将边添加到优化器，记录边、边连接的关键帧、边连接的地图点信息
                     optimizer.addEdge(e);
                     vpEdgesStereo.push_back(e);
                     vpEdgeKFStereo.push_back(pKFi);
@@ -1378,24 +1444,31 @@ void Optimizer::OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* p
  * @param[in] pKF1              当前帧
  * @param[in] pKF2              闭环候选帧
  * @param[in] vpMatches1        两个关键帧之间的匹配关系
- * @param[in] g2oS12            两个关键帧间的Sim3变换，方向是从2到1       
+ * @param[in] g2oS12            两个关键帧间的Sim3变换，方向是从2到1 ,闭环候选帧->当前帧      
  * @param[in] th2               卡方检验是否为误差边用到的阈值
  * @param[in] bFixScale         是否优化尺度，单目进行尺度优化，双目/RGB-D不进行尺度优化
  * @return int                  优化之后匹配点中内点的个数
  */
 int Optimizer::OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &vpMatches1, g2o::Sim3 &g2oS12, const float th2, const bool bFixScale)
 {
-    // Step 1：初始化g2o优化器
-    // 先构造求解器
-    g2o::SparseOptimizer optimizer;
-    // 构造线性方程求解器，Hx = -b的求解器
-    g2o::BlockSolverX::LinearSolverType * linearSolver;
+
+
+    /*  ***Step 1：初始化g2o优化器***  */
+
+    // 1）构造线性方程求解器，Hx = -b的求解器
+    g2o::BlockSolverX::LinearSolverType * linearSolver;//使用dense cholesky分解法。继承自LinearSolver
     // 使用dense的求解器，（常见非dense求解器有cholmod线性求解器和shur补线性求解器）
     linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
+
+    // 2）创建BlockSolver，并用上面定义的线性求解器初始化
     g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
-    // 使用L-M迭代
+
+    // 3）创建总求解器solver,并使用L-M迭代策略，用BlockSolver进行初始化
     g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    optimizer.setAlgorithm(solver);
+    
+    // 4）构造图优化的核心：稀疏优化器SparseOptimizer
+    g2o::SparseOptimizer optimizer;
+    optimizer.setAlgorithm(solver);//设置优化器的迭代策略
 
     // Calibration
     // 内参矩阵
@@ -1410,41 +1483,43 @@ int Optimizer::OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
 
     // Set Sim3 vertex
     // Step 2: 设置待优化的Sim3位姿作为顶点
+    // 此处为结点1：相机位姿结点   其中为什么叫SIM3？？？
     g2o::VertexSim3Expmap * vSim3 = new g2o::VertexSim3Expmap();    
     // 根据传感器类型决定是否固定尺度
     vSim3->_fix_scale=bFixScale;
-    vSim3->setEstimate(g2oS12);
-    vSim3->setId(0);
+    // 设置预设值为两个关键帧间的Sim3变换，方向是从闭环候选帧->当前帧   
+    vSim3->setEstimate(g2oS12);   
+    vSim3->setId(0);//？？？
     // Sim3 需要优化
     vSim3->setFixed(false);                             // 因为要优化Sim3顶点，所以设置为false
-    vSim3->_principle_point1[0] = K1.at<float>(0,2);    // 光心横坐标cx
-    vSim3->_principle_point1[1] = K1.at<float>(1,2);    // 光心纵坐标cy
-    vSim3->_focal_length1[0] = K1.at<float>(0,0);       // 焦距 fx
-    vSim3->_focal_length1[1] = K1.at<float>(1,1);       // 焦距 fy
-    vSim3->_principle_point2[0] = K2.at<float>(0,2);
-    vSim3->_principle_point2[1] = K2.at<float>(1,2);
-    vSim3->_focal_length2[0] = K2.at<float>(0,0);
-    vSim3->_focal_length2[1] = K2.at<float>(1,1);
-    optimizer.addVertex(vSim3);
+    vSim3->_principle_point1[0] = K1.at<float>(0,2);    // k1光心横坐标cx
+    vSim3->_principle_point1[1] = K1.at<float>(1,2);    // k1光心纵坐标cy
+    vSim3->_focal_length1[0] = K1.at<float>(0,0);       // k1焦距 fx
+    vSim3->_focal_length1[1] = K1.at<float>(1,1);       // k1焦距 fy
+    vSim3->_principle_point2[0] = K2.at<float>(0,2);    // k2光心横坐标cx
+    vSim3->_principle_point2[1] = K2.at<float>(1,2);    // k2光心纵坐标cy
+    vSim3->_focal_length2[0] = K2.at<float>(0,0);       // k2焦距 fx
+    vSim3->_focal_length2[1] = K2.at<float>(1,1);       // k2焦距 fy
+    optimizer.addVertex(vSim3);                         // 将Sim3顶点设置为顶点
 
     // Set MapPoint vertices
     // Step 3: 设置匹配的地图点作为顶点
     const int N = vpMatches1.size();
-    // 获取pKF1的地图点
+    // 获取pKF1的所有地图点
     const vector<MapPoint*> vpMapPoints1 = pKF1->GetMapPointMatches();
 
-    vector<g2o::EdgeSim3ProjectXYZ*> vpEdges12;         //pKF2对应的地图点到pKF1的投影边
-    vector<g2o::EdgeInverseSim3ProjectXYZ*> vpEdges21;  //pKF1对应的地图点到pKF2的投影边
+    vector<g2o::EdgeSim3ProjectXYZ*> vpEdges12;         //pKF2对应的地图点到pKF1的投影边？？？
+    vector<g2o::EdgeInverseSim3ProjectXYZ*> vpEdges21;  //pKF1对应的地图点到pKF2的投影边？？？
     vector<size_t> vnIndexEdge;                         //边的索引
 
     vnIndexEdge.reserve(2*N);
-    vpEdges12.reserve(2*N);
+    vpEdges12.reserve(2*N);//？？？为什么要设置成两倍呢
     vpEdges21.reserve(2*N);
 
     // 核函数的阈值
-    const float deltaHuber = sqrt(th2);
+    const float deltaHuber = sqrt(th2);//sqrt代表平方根
 
-    int nCorrespondences = 0;
+    int nCorrespondences = 0;//匹配对
 
     // 遍历每对匹配点
     for(int i=0; i<N; i++)
@@ -1453,15 +1528,16 @@ int Optimizer::OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
             continue;
 
         // pMP1和pMP2是匹配的地图点
-        MapPoint* pMP1 = vpMapPoints1[i];
-        MapPoint* pMP2 = vpMatches1[i];
+        MapPoint* pMP1 = vpMapPoints1[i];// 获取pKF1的所有地图点
+        // 下标是当前关键帧中特征点的id,内容是对应匹配的,闭环关键帧中的地图点
+        MapPoint* pMP2 = vpMatches1[i];//获取pKF2中的匹配的地图点
 
         // 保证顶点的id能够错开
         const int id1 = 2*i+1;
         const int id2 = 2*(i+1);
 
         // i2 是 pMP2 在pKF2中对应的索引
-        const int i2 = pMP2->GetIndexInKeyFrame(pKF2);
+        const int i2 = pMP2->GetIndexInKeyFrame(pKF2);//获取观测到当前地图点的关键帧,在观测数据中的索引
 
         if(pMP1 && pMP2)
         {

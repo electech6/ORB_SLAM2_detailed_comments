@@ -56,7 +56,7 @@ MapPoint::MapPoint(const cv::Mat &Pos,  //地图点的世界坐标
     mbBad(false),                           //坏点标记
     mpReplaced(static_cast<MapPoint*>(NULL)), //替换掉当前地图点的点
     mfMinDistance(0),                       //当前地图点在某帧下,可信赖的被找到时其到关键帧光心距离的下界
-    mfMaxDistance(0),                       //上界
+    mfMaxDistance(0),                       //上界，当前地图点在某帧下,可信赖的被找到时其到关键帧光心距离的
     mpMap(pMap)                             //从属地图
 {
     Pos.copyTo(mWorldPos);
@@ -159,6 +159,7 @@ void MapPoint::AddObservation(KeyFrame* pKF, size_t idx)
     // 如果没有添加过观测，记录下能观测到该MapPoint的KF和该MapPoint在KF中的索引
     mObservations[pKF]=idx;
 
+    // 更新地图点被观测到的次数？？？trista
     if(pKF->mvuRight[idx]>=0)
         nObs+=2; // 双目或者rgbd
     else
@@ -262,13 +263,13 @@ void MapPoint::Replace(MapPoint* pMP)
     // 2. 将观测到当前地图点的关键帧的信息进行更新
 
 
-    // 清除当前地图点的信息，这一段和SetBadFlag函数相同
-    int nvisible, nfound;
+    // 清除当前地图点的信息，这一段和SetBadFlag函数相同 ???
+    int nvisible, nfound;// 当前地图点的可视次数和被找到的次数
     map<KeyFrame*,size_t> obs;
     {
         unique_lock<mutex> lock1(mMutexFeatures);
         unique_lock<mutex> lock2(mMutexPos);
-        obs=mObservations;
+        obs=mObservations;//观测到该MapPoint的KF和该MapPoint在KF中的索引
         //清除当前地图点的原有观测
         mObservations.clear();
         //当前的地图点被删除了
@@ -365,9 +366,9 @@ float MapPoint::GetFoundRatio()
 void MapPoint::ComputeDistinctiveDescriptors()
 {
     // Retrieve all observed descriptors
-    vector<cv::Mat> vDescriptors;
+    vector<cv::Mat> vDescriptors;//检查所有能够被相机观测到的描述子，集合所有的共视，存放的是orb描述子？？？
 
-    map<KeyFrame*,size_t> observations;
+    map<KeyFrame*,size_t> observations;//绑定关键帧的所有共视特征点
 
     // Step 1 获取该地图点所有有效的观测关键帧信息
     {
@@ -428,12 +429,12 @@ void MapPoint::ComputeDistinctiveDescriptors()
         // 第i个描述子到其它所有描述子之间的距离
         // vector<int> vDists(Distances[i],Distances[i]+N);
 		vector<int> vDists(Distances[i].begin(), Distances[i].end());
-		sort(vDists.begin(), vDists.end());
+		sort(vDists.begin(), vDists.end());//对描述子之间的距离进行升序排序
 
         // 获得中值
-        int median = vDists[0.5*(N-1)];
+        int median = vDists[0.5*(N-1)];//？？？这样设置中值不会出现小数点吗？？
         
-        // 寻找最小的中值
+        // 寻找最小的中值--更新最小的中值
         if(median<BestMedian)
         {
             BestMedian = median;
@@ -486,22 +487,22 @@ bool MapPoint::IsInKeyFrame(KeyFrame *pKF)
 }
 
 /**
- * @brief 更新地图点的平均观测方向、观测距离范围
+ * @brief 更新地图点的平均观测方向、观测距离范围  ？？？？不理解具体在做什么
  *
  */
 void MapPoint::UpdateNormalAndDepth()
 {
     // Step 1 获得观测到该地图点的所有关键帧、坐标等信息
-    map<KeyFrame*,size_t> observations;
-    KeyFrame* pRefKF;
-    cv::Mat Pos;
+    map<KeyFrame*,size_t> observations;//存放能够观测到该地图点的关键帧和该地图点在该关键帧中的索引
+    KeyFrame* pRefKF;// 地图点的参考关键帧--通常情况下MapPoint的参考关键帧就是创建该MapPoint的那个关键帧
+    cv::Mat Pos;//地图点在世界坐标系下的位置
     {
-        unique_lock<mutex> lock1(mMutexFeatures);
-        unique_lock<mutex> lock2(mMutexPos);
+        unique_lock<mutex> lock1(mMutexFeatures);//???
+        unique_lock<mutex> lock2(mMutexPos);//????
         if(mbBad)
             return;
 
-        observations=mObservations; // 获得观测到该地图点的所有关键帧
+        observations=mObservations; // 获得观测到该地图点的所有关键帧和地图点在关键帧中的索引
         pRefKF=mpRefKF;             // 观测到该点的参考关键帧（第一次创建时的关键帧）
         Pos = mWorldPos.clone();    // 地图点在世界坐标系中的位置
     }
@@ -513,28 +514,29 @@ void MapPoint::UpdateNormalAndDepth()
     // 能观测到该地图点的所有关键帧，对该点的观测方向归一化为单位向量，然后进行求和得到该地图点的朝向
     // 初始值为0向量，累加为归一化向量，最后除以总数n
     cv::Mat normal = cv::Mat::zeros(3,1,CV_32F);
-    int n=0;
+    int n=0;//观测到该地图点的关键帧数量
     for(map<KeyFrame*,size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
     {
-        KeyFrame* pKF = mit->first;
-        cv::Mat Owi = pKF->GetCameraCenter();
+        KeyFrame* pKF = mit->first;//当前遍历到的能够观测到该地图点的关键帧
+        cv::Mat Owi = pKF->GetCameraCenter();//相机光心(左目)在世界坐标系下的坐标
         // 获得地图点和观测到它关键帧的向量并归一化
-        cv::Mat normali = mWorldPos - Owi;
-        normal = normal + normali/cv::norm(normali);                       
+        cv::Mat normali = mWorldPos - Owi;// 类似于地图中的世界坐标P_w和相机中心O_w之间的距离
+        normal = normal + normali/cv::norm(normali);// 平均观测方向，并进行归一化                      
         n++;
     } 
 
+    // 观测距离范围计算：目的是为了利用图像金字塔实现特征尺度不变性
     cv::Mat PC = Pos - pRefKF->GetCameraCenter();                           // 参考关键帧相机指向地图点的向量（在世界坐标系下的表示）
-    const float dist = cv::norm(PC);                                        // 该点到参考关键帧相机的距离
+    const float dist = cv::norm(PC);                                        // 该点到参考关键帧相机的距离归一化
     const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;        // 观测到该地图点的当前帧的特征点在金字塔的第几层
     const float levelScaleFactor =  pRefKF->mvScaleFactors[level];          // 当前金字塔层对应的尺度因子，scale^n，scale=1.2，n为层数
     const int nLevels = pRefKF->mnScaleLevels;                              // 金字塔总层数，默认为8
 
     {
         unique_lock<mutex> lock3(mMutexPos);
-        // 使用方法见PredictScale函数前的注释
-        mfMaxDistance = dist*levelScaleFactor;                              // 观测到该点的距离上限
-        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];    // 观测到该点的距离下限
+        // 使用方法见PredictScale函数前的注释--保证尺度不变 此处参见loaclMapping 部分的解释
+        mfMaxDistance = dist*levelScaleFactor;                              // 尺度不变的最大物距，观测到该点的距离上限
+        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];    // 尺度不变的最小物距，观测到该点的距离下限 （在这里表示比最大物距小一级的物距）
         mNormalVector = normal/n;                                           // 获得地图点平均的观测方向
     }
 }
@@ -609,7 +611,7 @@ int MapPoint::PredictScale(const float &currentDist, Frame* pF)
         ratio = mfMaxDistance/currentDist;
     }
 
-    int nScale = ceil(log(ratio)/pF->mfLogScaleFactor);
+    int nScale = ceil(log(ratio)/pF->mfLogScaleFactor);//返回大于等于该数的最小值，相当于直接入
     if(nScale<0)
         nScale = 0;
     else if(nScale>=pF->mnScaleLevels)

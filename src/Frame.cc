@@ -48,7 +48,7 @@ bool Frame::mbInitialComputations=true;
 
 float Frame::cx, Frame::cy, Frame::fx, Frame::fy, Frame::invfx, Frame::invfy;
 float Frame::mnMinX, Frame::mnMinY, Frame::mnMaxX, Frame::mnMaxY;
-float Frame::mfGridElementWidthInv, Frame::mfGridElementHeightInv;
+float Frame::mfGridElementWidthInv/*表示每个像素可以均分几个网格列（肯定小于1）*/, Frame::mfGridElementHeightInv/*表示每个像素可以均分几个网格行（肯定小于1）*/;
 
 
 //无参的构造函数默认为空
@@ -89,7 +89,7 @@ Frame::Frame(const Frame &frame)
      mvLevelSigma2(frame.mvLevelSigma2), 					//深拷贝
      mvInvLevelSigma2(frame.mvInvLevelSigma2)				//深拷贝
 {
-	//逐个复制，其实这里也是深拷贝
+	//逐个复制，其实这里也是深拷贝  深拷贝得深层原理???
     for(int i=0;i<FRAME_GRID_COLS;i++)
         for(int j=0; j<FRAME_GRID_ROWS; j++)
 			//这里没有使用前面的深拷贝方式的原因可能是mGrid是由若干vector类型对象组成的vector，
@@ -128,7 +128,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     // Step 2 计算图像金字塔的参数 
 	//获取图像金字塔的层数
     mnScaleLevels = mpORBextractorLeft->GetLevels();
-	//这个是获得层与层之前的缩放比
+	//这个是获得层与层之前的缩放比--参照物是什么呢
     mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
 	//计算上面缩放比的对数, NOTICE log=自然对数，log10=才是以10为基底的对数 
     mfLogScaleFactor = log(mfScaleFactor);
@@ -151,7 +151,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     thread threadRight(&Frame::ExtractORB,this,1,imRight);
 	//等待两张图像特征点提取过程完成
     threadLeft.join();
-    threadRight.join();
+    threadRight.join();//???? join是什么用法，针对多线程得用法吗
 
 	//mvKeys中保存的是左图像中的特征点，这里是获取左侧图像中特征点的个数
     N = mvKeys.size();
@@ -161,7 +161,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
         return;
 	
     // Step 4 用OpenCV的矫正函数、内参对提取到的特征点进行矫正
-    // 实际上由于双目输入的图像已经预先经过矫正,所以实际上并没有对特征点进行任何处理操作
+    // 实际上由于双目输入的图像已经预先经过矫正,所以实际上并没有对特征点进行任何处理操作???是相机本身图像已经矫正还是前面得操作中有矫正
     UndistortKeyPoints();
 
     // Step 5 计算双目间特征点的匹配，只有匹配成功的特征点会计算其深度,深度存放在 mvDepth 
@@ -174,7 +174,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     mvbOutlier = vector<bool>(N,false);
 
     // This is done only for the first Frame (or after a change in the calibration)
-	//  Step 5 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
+	//  Step 6 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
     if(mbInitialComputations)
     {
 		//计算去畸变后图像的边界
@@ -450,6 +450,13 @@ void Frame::SetPose(cv::Mat Tcw)
     UpdatePoseMatrices();
 }
 
+/*
+ *       变换矩阵
+ * | R_00  R_00  R_00  t0 |
+ * | R_00  R_00  R_00  t1 |
+ * | R_00  R_00  R_00  t2 |
+ * | 0      0     0     1 |
+ */
 //根据Tcw计算mRcw、mtcw和mRwc、mOw
 void Frame::UpdatePoseMatrices()
 {
@@ -459,18 +466,19 @@ void Frame::UpdatePoseMatrices()
     // mtcw：   世界坐标系到相机坐标系的平移向量
     // mRwc：   相机坐标系到世界坐标系的旋转矩阵
 
-	//从变换矩阵中提取出旋转矩阵
-    //注意，rowRange这个只取到范围的左边界，而不取右边界
+	// 从变换矩阵中提取出旋转矩阵 -o(1)的操作
+    // rowRange（startrow 从0开始的行间距索引，endrow终止索引） 获取某些范围内行或列的指针
+    // 注意，rowRange这个只取到范围的包括左边界，而不取右边界
     mRcw = mTcw.rowRange(0,3).colRange(0,3);
 
     // mRcw求逆即可
-    mRwc = mRcw.t();
+    mRwc = mRcw.t();//矩阵的转置，但是旋转矩阵的转置就是它的逆
 
-    // 从变换矩阵中提取出旋转矩阵
+    // 从变换矩阵中提取出平移向量
     mtcw = mTcw.rowRange(0,3).col(3);
 
     // mTcw 求逆后是当前相机坐标系变换到世界坐标系下，对应的光心变换到世界坐标系下就是 mTcw的逆 中对应的平移向量
-    mOw = -mRcw.t()*mtcw;
+    mOw = -mRcw.t()*mtcw;//？？？不理解原理是什么？？？平移向量是什么？？？抓狂了，怎么这么多看不懂的
 }
 
 /**
@@ -593,31 +601,34 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
     vector<size_t> vIndices;
     vIndices.reserve(N);
 
-    // Step 1 计算半径为r圆左右上下边界所在的网格列和行的id
+    /* Step 1 计算半径为r圆左右上下边界所在的网格列和行的id */
     // 查找半径为r的圆左侧边界所在网格列坐标。这个地方有点绕，慢慢理解下：
     // (mnMaxX-mnMinX)/FRAME_GRID_COLS：表示列方向每个网格可以平均分得几个像素（肯定大于1）
     // mfGridElementWidthInv=FRAME_GRID_COLS/(mnMaxX-mnMinX) 是上面倒数，表示每个像素可以均分几个网格列（肯定小于1）
 	// (x-mnMinX-r)，可以看做是从图像的左边界mnMinX到半径r的圆的左边界区域占的像素列数
 	// 两者相乘，就是求出那个半径为r的圆的左侧边界在哪个网格列中
-    // 保证nMinCellX 结果大于等于0
+    // 其中floor指的是向下取舍
+    // 保证nMinCellX 结果大于等于0,最简单的理解方式是查看学习手册pdf中的快速搜索候选匹配特征点部分
     const int nMinCellX = max(0,(int)floor( (x-mnMinX-r)*mfGridElementWidthInv));
-
-
 	// 如果最终求得的圆的左边界所在的网格列超过了设定了上限，那么就说明计算出错，找不到符合要求的特征点，返回空vector
     if(nMinCellX>=FRAME_GRID_COLS)
         return vIndices;
 
-	// 计算圆所在的右边界网格列索引
+
+	// 计算圆所在的右边界网格列索引，其中ceil指的是向上取整
     const int nMaxCellX = min((int)FRAME_GRID_COLS-1, (int)ceil((x-mnMinX+r)*mfGridElementWidthInv));
 	// 如果计算出的圆右边界所在的网格不合法，说明该特征点不好，直接返回空vector
     if(nMaxCellX<0)
         return vIndices;
 
-	//后面的操作也都是类似的，计算出这个圆上下边界所在的网格行的id
+
+	//后面的操作也都是类似的，计算出这个圆上边界所在的网格行的id，floor向下取舍
     const int nMinCellY = max(0,(int)floor((y-mnMinY-r)*mfGridElementHeightInv));
     if(nMinCellY>=FRAME_GRID_ROWS)
         return vIndices;
 
+
+    //后面的操作也都是类似的，计算出这个圆下边界所在的网格行的id，ceil指的是向上取整
     const int nMaxCellY = min((int)FRAME_GRID_ROWS-1,(int)ceil((y-mnMinY+r)*mfGridElementHeightInv));
     if(nMaxCellY<0)
         return vIndices;
@@ -627,7 +638,7 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
     //? 改为 const bool bCheckLevels = (minLevel>=0) || (maxLevel>=0);
     const bool bCheckLevels = (minLevel>0) || (maxLevel>=0);
 
-    // Step 2 遍历圆形区域内的所有网格，寻找满足条件的候选特征点，并将其index放到输出里
+    /* Step 2 遍历圆形区域内的所有网格，寻找满足条件的候选特征点，并将其index放到输出vIndices2里*/
     for(int ix = nMinCellX; ix<=nMaxCellX; ix++)
     {
         for(int iy = nMinCellY; iy<=nMaxCellY; iy++)
@@ -697,18 +708,20 @@ bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY)
 }
 
 /**
- * @brief 计算当前帧特征点对应的词袋Bow，主要是mBowVec 和 mFeatVec
+ * @brief 计算当前帧特征点对应的词袋Bow，主要是mBowVec 和 mFeatVec ？？？
  * 
  */
 void Frame::ComputeBoW()
 {
 	
     // 判断是否以前已经计算过了，计算过了就跳过
-    if(mBowVec.empty())
+    if(mBowVec.empty())//如果当前帧的词袋为空时，将当前帧以opencv存储的Mat类型描述子转换成std::vectorcv::Mat 类型的向量格式 
     {
 		// 将描述子mDescriptors转换为DBOW要求的输入格式
         vector<cv::Mat> vCurrentDesc = Converter::toDescriptorVector(mDescriptors);
-		// 将特征点的描述子转换成词袋向量mBowVec以及特征向量mFeatVec
+		// 将特征点的描述子转换成词袋向量mBowVec以及特征向量mFeatVec(也成为正向索引)用来储存该图像生成 BoW 
+        // 向量时曾经到达过的第 m 层上节点的编号，以及路过这个节点的特征的编号，意义在于当对两幅图像做涉及到
+        // 特征点的匹配计算时,可以利用“属于同一单词索引的特征更有可能匹配”的设定规则来加速匹配；
         mpORBvocabulary->transform(vCurrentDesc,	//当前的描述子vector
 								   mBowVec,			//输出，词袋向量，记录的是单词的id及其对应权重TF-IDF值
 								   mFeatVec,		//输出，记录node id及其对应的图像 feature对应的索引
@@ -724,6 +737,7 @@ void Frame::UndistortKeyPoints()
 {
     // Step 1 如果第一个畸变参数为0，不需要矫正。第一个畸变参数k1是最重要的，一般不为0，为0的话，说明畸变参数都是0
 	//变量mDistCoef中存储了opencv指定格式的去畸变参数，格式为：(k1,k2,p1,p2,k3)
+    //k1径向矫正的过程中，主要矫正畸变较小的图像中心区域
     if(mDistCoef.at<float>(0)==0.0)
     {
         mvKeysUn=mvKeys;
@@ -747,19 +761,38 @@ void Frame::UndistortKeyPoints()
     // 函数reshape(int cn,int rows=0) 其中cn为更改后的通道数，rows=0表示这个行将保持原来的参数不变
     //为了能够直接调用opencv的函数来去畸变，需要先将矩阵调整为2通道（对应坐标x,y） 
     mat=mat.reshape(2);
-    cv::undistortPoints(	
-		mat,				//输入的特征点坐标
+    cv::undistortPoints(
+        /*	src: Observed point coordinates, 2xN/Nx2 1-channel or 1xN/Nx1 2-channel 
+         * (CV_32FC2 or CV_64FC2) (or vector<Point2f> ).
+         */	
+		mat,				//输入的特征点坐标；观测点的shape，即src的shape是1xNx2或Nx1x2；
+        /* dst:	Output ideal point coordinates (1xN/Nx1 2-channel or vector<Point2f> ) 
+         * after undistortion and reverse perspective transformation. If matrix P 
+         * is identity or omitted, dst will contain normalized point coordinates.
+         * */
 		mat,				//输出的校正后的特征点坐标覆盖原矩阵
 		mK,					//相机的内参数矩阵
-		mDistCoef,			//相机畸变参数矩阵
-		cv::Mat(),			//一个空矩阵，对应为函数原型中的R
-		mK); 				//新内参数矩阵，对应为函数原型中的P
+		/* Input vector of distortion coefficients 
+        * (k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]]) of 4, 5, 8, 12 or 14 elements.
+        * If the vector is NULL/empty, the zero distortion coefficients are assumed.
+        * */
+        mDistCoef,			//相机畸变参数矩阵
+	    /* R: 一个空矩阵，对应为函数原型中的R，如果这个矩阵为空，则代表使用恒等变换。对象空间中的校正变换
+         * （3x3 矩阵）。通过 stereoRectify 计算的 R1 或 R2 可以在这里传递。这个R参数是用在双目里，
+         * 单目里置为空。*/
+		cv::Mat(),		
+		/* P: 新内参数矩阵，对应为函数原型中的P。新相机矩阵 (3x3) 或新投影矩阵 (3x4)，通过 stereoRectify 
+         * 计算的 P1 或 P2 可以在这里传递。如果P矩阵为空，则使用标识新相机矩阵，得到得结果得点坐标是相机
+         * 得归一化坐标，这时候数值会明显很小，如果设为相机内参就会进行计算，得到的才是特征点消除畸变后的
+        *  像素坐标。如果想得到同一个相机下的真实像素，就将P设置为内参即可。*/
+		
+        mK); 				
 	
 	//调整回只有一个通道，回归我们正常的处理方式
     mat=mat.reshape(1);
 
     // Fill undistorted keypoint vector
-    // Step 存储校正后的特征点
+    // Step 3 存储校正后的特征点
     mvKeysUn.resize(N);
 	//遍历每一个特征点
     for(int i=0; i<N; i++)
@@ -841,51 +874,50 @@ void Frame::ComputeStereoMatches()
      * 输出：稀疏特征点视差图/深度图（亚像素精度）mvDepth 匹配结果 mvuRight
      */
 
+
     // 为匹配结果预先分配内存，数据类型为float型
-    // mvuRight存储右图匹配点索引
-    // mvDepth存储特征点的深度信息
-	mvuRight = vector<float>(N,-1.0f);
-    mvDepth = vector<float>(N,-1.0f);
+	mvuRight = vector<float>(N,-1.0f);  // mvuRight存储右图匹配点索引
+    mvDepth = vector<float>(N,-1.0f);   // mvDepth存储特征点的深度信息
 
 	// orb特征相似度阈值  -> mean ～= (max  + min) / 2
-    const int thOrbDist = (ORBmatcher::TH_HIGH+ORBmatcher::TH_LOW)/2;
+    const int thOrbDist = (ORBmatcher::TH_HIGH + ORBmatcher::TH_LOW)/2;
 
     // 金字塔底层（0层）图像高 nRows
     const int nRows = mpORBextractorLeft->mvImagePyramid[0].rows;
 
+// ？？？不明白这里是什么操作 到913行的意思
 	// 二维vector存储每一行的orb特征点的列坐标的索引，为什么是vector，因为每一行的特征点有可能不一样，例如
     // vRowIndices[0] = [1，2，5，8, 11]   第1行有5个特征点,他们的列号（即x坐标）分别是1,2,5,8,11
     // vRowIndices[1] = [2，6，7，9, 13, 17, 20]  第2行有7个特征点.etc
     vector<vector<size_t> > vRowIndices(nRows, vector<size_t>());
-    for(int i=0; i<nRows; i++) vRowIndices[i].reserve(200);
+    for(int i=0; i<nRows; i++) vRowIndices[i].reserve(200);//每一行的orb特征点的列坐标的索引（里面放的是特征点的索引）
 
 	// 右图特征点数量，N表示数量 r表示右图，且不能被修改
     const int Nr = mvKeysRight.size();
 
 	// Step 1. 行特征点统计。 考虑用图像金字塔尺度作为偏移，左图中对应右图的一个特征点可能存在于多行，而非唯一的一行
     for(int iR = 0; iR < Nr; iR++) {
-
         // 获取特征点ir的y坐标，即行号
-        const cv::KeyPoint &kp = mvKeysRight[iR];
-        const float &kpY = kp.pt.y;
+        const cv::KeyPoint &kp = mvKeysRight[iR];s
+        const float &kpY = kp.pt.y;// 特征点IR的坐标Y
         
         // 计算特征点ir在行方向上，可能的偏移范围r，即可能的行号为[kpY + r, kpY -r]
         // 2 表示在全尺寸(scale = 1)的情况下，假设有2个像素的偏移，随着尺度变化，r也跟着变化
         const float r = 2.0f * mvScaleFactors[mvKeysRight[iR].octave];
-        const int maxr = ceil(kpY + r);
-        const int minr = floor(kpY - r);
+        const int maxr = ceil(kpY + r); // 返回大于或者等于指定表达式的最小整数
+        const int minr = floor(kpY - r);// 返回小于或者等于指定表达式的最大整数
 
         // 将特征点ir保证在可能的行号中
         for(int yi=minr;yi<=maxr;yi++)
-            vRowIndices[yi].push_back(iR);
+            vRowIndices[yi].push_back(iR);// yi代表的是行号
     }
 
     // 下面是 粗匹配 + 精匹配的过程
-    // 对于立体矫正后的两张图，在列方向(x)存在最大视差maxd和最小视差mind
+    // 对于立体矫正后的两张图，在列方向(x)存在最大视差maxd和最小视差mind ？？？
     // 也即是左图中任何一点p，在右图上的匹配点的范围为应该是[p - maxd, p - mind], 而不需要遍历每一行所有的像素
     // maxd = baseline * length_focal / minZ
     // mind = baseline * length_focal / maxZ
-
+    // 此处的原理参考：https://aijishu.com/a/1060000000139727
     const float minZ = mb;
     const float minD = 0;			// 最小视差为0，对应无穷远 
     const float maxD = mbf/minZ;    // 最大视差对应的距离是相机的基线

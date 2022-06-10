@@ -77,12 +77,13 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
 // Bag of Words Representation 计算词袋表示
 void KeyFrame::ComputeBoW()
 {
-    // 只有当词袋向量或者节点和特征序号的特征向量为空的时候执行
+    // 只有当词袋向量或者节点和特征序号的特征向量为空的时候执行-避免重复执行计算操作
     if(mBowVec.empty() || mFeatVec.empty())
     {
-        // 那么就从当前帧的描述子中转换得到词袋信息
+        // 那么就从当前帧的描述子中转换得到词袋信息，将描述子得形式转换成vector<cv::Mat>向量格式
         vector<cv::Mat> vCurrentDesc = Converter::toDescriptorVector(mDescriptors);
         // Feature vector associate features with nodes in the 4th level (from leaves up)
+        // 特征向量将特征与第 4 层中的节点相关联（从叶子向上）
         // We assume the vocabulary tree has 6 levels, change the 4 otherwise  //?
         mpORBvocabulary->transform(vCurrentDesc,mBowVec,mFeatVec,4);
     }
@@ -112,7 +113,7 @@ void KeyFrame::SetPose(const cv::Mat &Tcw_)
     Cw = Twc*center;
 }
 
-// 获取位姿
+// 获取位姿 当前相机的位姿，世界坐标系到相机坐标系
 cv::Mat KeyFrame::GetPose()
 {
     unique_lock<mutex> lock(mMutexPose);
@@ -207,8 +208,8 @@ void KeyFrame::UpdateBestCovisibles()
     for(size_t i=0, iend=vPairs.size(); i<iend;i++)
     {
         // push_front 后变成从大到小
-        lKFs.push_front(vPairs[i].second);
-        lWs.push_front(vPairs[i].first);
+        lKFs.push_front(vPairs[i].second);//所有连接关键帧从大到小排
+        lWs.push_front(vPairs[i].first);//所有连接关键帧的权重（共视地图点的数量）从大到小排
     }
 
     // 权重从大到小排列的连接关键帧
@@ -409,9 +410,9 @@ MapPoint* KeyFrame::GetMapPoint(const size_t &idx)
  */
 void KeyFrame::UpdateConnections()
 {
-    // 关键帧-权重，权重为其它关键帧与当前关键帧共视地图点的个数，也称为共视程度
-    map<KeyFrame*,int> KFcounter; 
-    vector<MapPoint*> vpMP;
+    
+    map<KeyFrame*,int> KFcounter; // 关键帧-权重，权重为其它关键帧与当前关键帧共视地图点的个数，也称为共视程度
+    vector<MapPoint*> vpMP; //关键帧与当前关键帧的关键的共视关系，存储关键帧中的地图点
 
     {
         // 获得该关键帧的所有地图点
@@ -433,7 +434,7 @@ void KeyFrame::UpdateConnections()
         if(pMP->isBad())
             continue;
 
-        // 对于每一个地图点，observations记录了可以观测到该地图点的所有关键帧
+        // 对于每一个地图点，observations记录了可以观测到该地图点的所有关键帧以及该地图点在KF中的索引
         map<KeyFrame*,size_t> observations = pMP->GetObservations();
 
         for(map<KeyFrame*,size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
@@ -463,7 +464,7 @@ void KeyFrame::UpdateConnections()
 
     // vPairs记录与其它关键帧共视帧数大于th的关键帧
     // pair<int,KeyFrame*>将关键帧的权重写在前面，关键帧写在后面方便后面排序
-    vector<pair<int,KeyFrame*> > vPairs;
+    vector<pair<int,KeyFrame*> > vPairs;// vPairs记录与其它关键帧共视帧数大于th的关键帧
     vPairs.reserve(KFcounter.size());
     // Step 2 找到对应权重最大的关键帧（共视程度最高的关键帧）
     for(map<KeyFrame*,int>::iterator mit=KFcounter.begin(), mend=KFcounter.end(); mit!=mend; mit++)
@@ -842,25 +843,25 @@ bool KeyFrame::IsInImage(const float &x, const float &y) const
  */
 cv::Mat KeyFrame::UnprojectStereo(int i)
 {
-    const float z = mvDepth[i];
+    const float z = mvDepth[i];//对应特征点的深度
     if(z>0)
     {
         // 由2维图像反投影到相机坐标系
         // 双目中mvDepth是在ComputeStereoMatches函数中求取的，rgbd中是直接测量的
-        const float u = mvKeys[i].pt.x;
-        const float v = mvKeys[i].pt.y;
-        const float x = (u-cx)*z*invfx;
-        const float y = (v-cy)*z*invfy;
-        cv::Mat x3Dc = (cv::Mat_<float>(3,1) << x, y, z);
+        const float u = mvKeys[i].pt.x;//2维图像上的u坐标
+        const float v = mvKeys[i].pt.y;//2维图像上的v坐标
+        const float x = (u-cx)*z*invfx;//相机模型的反模型
+        const float y = (v-cy)*z*invfy;//相机模型的反模型
+        cv::Mat x3Dc = (cv::Mat_<float>(3,1) << x, y, z);// 相机坐标系下该点的坐标
 
-        unique_lock<mutex> lock(mMutexPose);
+        unique_lock<mutex> lock(mMutexPose);//???不太明白这个地方的互锁是什么意思
         // 由相机坐标系转换到世界坐标系
         // Twc为相机坐标系到世界坐标系的变换矩阵
         // Twc.rosRange(0,3).colRange(0,3)取Twc矩阵的前3行与前3列
-        return Twc.rowRange(0,3).colRange(0,3)*x3Dc+Twc.rowRange(0,3).col(3);
+        return Twc.rowRange(0,3).colRange(0,3)*x3Dc+Twc.rowRange(0,3).col(3);//dRX+T
     }
     else
-        return cv::Mat();
+        return cv::Mat();//此处是代表的空矩阵吗？cv::Mat
 }
 
 // Compute Scene Depth (q=2 median). Used in monocular. 评估当前关键帧场景深度，q=2表示中值. 只是在单目情况下才会使用

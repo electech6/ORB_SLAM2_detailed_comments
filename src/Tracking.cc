@@ -65,7 +65,7 @@ namespace ORB_SLAM2
 
 ///构造函数
 Tracking::Tracking(
-    System *pSys,                       //系统实例
+    System *pSys,                       //系统实例 ??? 指针
     ORBVocabulary* pVoc,                //BOW字典
     FrameDrawer *pFrameDrawer,          //帧绘制器
     MapDrawer *pMapDrawer,              //地图点绘制器
@@ -88,11 +88,19 @@ Tracking::Tracking(
         mnLastRelocFrameId(0)                               //恢复为0,没有进行这个过程的时候的默认值
 {
     // Load camera parameters from settings file
+
+    /* 补充：此处的fsSetting接口配置：
+    cv::FileStorage(const string& source, int flags， const string& encoding=string());
+    * 其中，
+    * source –存储或读取数据的文件名（字符串），其扩展名(.xml 或 .yml/.yaml)决定文件格式。
+    * flags – 操作模式，cv::FileStorage::READ包括打开文件进行读操作
+    */
     // Step 1 从配置文件中加载相机参数
-    cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    float fx = fSettings["Camera.fx"];
-    float fy = fSettings["Camera.fy"];
-    float cx = fSettings["Camera.cx"];
+    cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);//从配置文件路径读取配置（和前面的System有什么不同）
+    // fSettings["nodename"]文件节点名，实际上就是返回指定的顶层映射元素
+    float fx = fSettings["Camera.fx"];// 表示的焦距的参数，实际上就是焦距f * alpha (alpha 表示在u坐标轴上得缩放系数)
+    float fy = fSettings["Camera.fy"];// 表示的焦距的参数，实际上就是焦距f * beta (beta表示在u坐标轴上得缩放系数)
+    float cx = fSettings["Camera.cx"];// 主偏移量
     float cy = fSettings["Camera.cy"];
 
     //     |fx  0   cx|
@@ -104,16 +112,16 @@ Tracking::Tracking(
     K.at<float>(1,1) = fy;
     K.at<float>(0,2) = cx;
     K.at<float>(1,2) = cy;
-    K.copyTo(mK);
+    K.copyTo(mK); //将相机的内参矩阵拷贝到mK矩阵中
 
     // 图像矫正系数
     // [k1 k2 p1 p2 k3]
     cv::Mat DistCoef(4,1,CV_32F);
-    DistCoef.at<float>(0) = fSettings["Camera.k1"];
-    DistCoef.at<float>(1) = fSettings["Camera.k2"];
-    DistCoef.at<float>(2) = fSettings["Camera.p1"];
-    DistCoef.at<float>(3) = fSettings["Camera.p2"];
-    const float k3 = fSettings["Camera.k3"];
+    DistCoef.at<float>(0) = fSettings["Camera.k1"];// 径向矫正的过程中，主要矫正畸变较小的图像中心区域
+    DistCoef.at<float>(1) = fSettings["Camera.k2"];// 径向矫正的过程中，主要矫正即便较大的边缘区域地区
+    DistCoef.at<float>(2) = fSettings["Camera.p1"];// 切向畸变矫正系数
+    DistCoef.at<float>(3) = fSettings["Camera.p2"];// 切向畸变矫正系数
+    const float k3 = fSettings["Camera.k3"];//鱼眼相机中特有的
     //有些相机的畸变系数中会没有k3项
     if(k3!=0)
     {
@@ -123,7 +131,7 @@ Tracking::Tracking(
     DistCoef.copyTo(mDistCoef);
 
     // 双目摄像头baseline * fx 50
-    mbf = fSettings["Camera.bf"];
+    mbf = fSettings["Camera.bf"];//??? bf代表的是baseline * fx（fx代表的是焦距）
 
     float fps = fSettings["Camera.fps"];
     if(fps==0)
@@ -133,7 +141,7 @@ Tracking::Tracking(
     mMinFrames = 0;
     mMaxFrames = fps;
 
-    //输出
+    //输出相机参数
     cout << endl << "Camera Parameters: " << endl;
     cout << "- fx: " << fx << endl;
     cout << "- fy: " << fy << endl;
@@ -148,7 +156,7 @@ Tracking::Tracking(
     cout << "- fps: " << fps << endl;
 
     // 1:RGB 0:BGR
-    int nRGB = fSettings["Camera.RGB"];
+    int nRGB = fSettings["Camera.RGB"]; //RGB和BGR的区别在哪里???
     mbRGB = nRGB;
 
     if(mbRGB)
@@ -173,11 +181,11 @@ Tracking::Tracking(
 
     // tracking过程都会用到mpORBextractorLeft作为特征点提取器
     mpORBextractorLeft = new ORBextractor(
-        nFeatures,      //参数的含义还是看上面的注释吧
-        fScaleFactor,
-        nLevels,
-        fIniThFAST,
-        fMinThFAST);
+        nFeatures,      // 每一帧指定要提取出来的特征点数目 1000
+        fScaleFactor,   // 图像建立金字塔时的变化尺度 1.2
+        nLevels,        // 尺度金字塔的层数 8
+        fIniThFAST,     // 提取fast特征点的默认阈值 20
+        fMinThFAST);    // 如果默认阈值提取不出足够fast特征点，使用的最小的FAST响应值阈值 8
 
     // 如果是双目，tracking过程中还会用用到mpORBextractorRight作为右目特征点提取器
     if(sensor==System::STEREO)
@@ -194,10 +202,11 @@ Tracking::Tracking(
     cout << "- Initial Fast Threshold: " << fIniThFAST << endl;
     cout << "- Minimum Fast Threshold: " << fMinThFAST << endl;
 
-    if(sensor==System::STEREO || sensor==System::RGBD)
+    if(sensor==System::STEREO || sensor==System::RGBD) //RGBD相机深度相机，追觅实习处理过的那种
     {
         // 判断一个3D点远/近的阈值 mbf * 35 / fx
-        //ThDepth其实就是表示基线长度的多少倍
+        // fx = alpha*f  ThDepth其实就是表示baseline * Thdepth/alpha，mThDepth = ThDepth * (baseline/alpha)，双目和RGB-D相机的区分近点和远点的限值
+        // alpha是相机坐标系在u轴上缩放了alpha倍
         mThDepth = mbf*(float)fSettings["ThDepth"]/fx;
         cout << endl << "Depth Threshold (Close/Far Points): " << mThDepth << endl;
     }
@@ -232,7 +241,7 @@ void Tracking::SetViewer(Viewer *pViewer)
     mpViewer=pViewer;
 }
 
-// 输入左右目图像，可以为RGB、BGR、RGBA、GRAY
+// 输入左右目图像，可以为RGB、BGR、RGBA、GRAY  ???为什么可以rgba，没看到相关代码呀
 // 1、将图像转为mImGray和imGrayRight并初始化mCurrentFrame
 // 2、进行tracking过程
 // 输出世界坐标系到该帧相机坐标系的变换矩阵
@@ -249,15 +258,17 @@ cv::Mat Tracking::GrabImageStereo(
     // step 1 ：将RGB或RGBA图像转为灰度图像
     if(mImGray.channels()==3)
     {
-        if(mbRGB)
+        if(mbRGB)//颜色通道的顺序是由滤光片的顺序决定的
         {
-            cvtColor(mImGray,mImGray,CV_RGB2GRAY);
-            cvtColor(imGrayRight,imGrayRight,CV_RGB2GRAY);
+            // rgb -> gray
+            cvtColor(mImGray,mImGray,CV_RGB2GRAY);// 将左侧图像由rgb转换成灰度图
+            cvtColor(imGrayRight,imGrayRight,CV_RGB2GRAY);// 将右侧图像由转换成灰度图
         }
         else
         {
-            cvtColor(mImGray,mImGray,CV_BGR2GRAY);
-            cvtColor(imGrayRight,imGrayRight,CV_BGR2GRAY);
+            // rgba(bgr) -> gray
+            cvtColor(mImGray,mImGray,CV_BGR2GRAY);// 将左侧图像由bgr转换成灰度图
+            cvtColor(imGrayRight,imGrayRight,CV_BGR2GRAY);// 将右侧图像由转换成灰度图
         }
     }
     // 这里考虑得十分周全,甚至连四通道的图像都考虑到了
@@ -265,13 +276,13 @@ cv::Mat Tracking::GrabImageStereo(
     {
         if(mbRGB)
         {
-            cvtColor(mImGray,mImGray,CV_RGBA2GRAY);
-            cvtColor(imGrayRight,imGrayRight,CV_RGBA2GRAY);
+            cvtColor(mImGray,mImGray,CV_RGBA2GRAY);// 将左侧图像由rgb转换成灰度图
+            cvtColor(imGrayRight,imGrayRight,CV_RGBA2GRAY);// 将右侧图像由转换成灰度图
         }
         else
         {
-            cvtColor(mImGray,mImGray,CV_BGRA2GRAY);
-            cvtColor(imGrayRight,imGrayRight,CV_BGRA2GRAY);
+            cvtColor(mImGray,mImGray,CV_BGRA2GRAY);// 将左侧图像由bgr转换成灰度图(灰度图是指的单通道图像)
+            cvtColor(imGrayRight,imGrayRight,CV_BGRA2GRAY);// 将右侧图像由转换成灰度图
         }
     }
 
@@ -291,7 +302,7 @@ cv::Mat Tracking::GrabImageStereo(
     // Step 3 ：跟踪
     Track();
 
-    //返回位姿
+    //返回追踪线程中的关键帧的位姿
     return mCurrentFrame.mTcw.clone();
 }
 
@@ -324,6 +335,11 @@ cv::Mat Tracking::GrabImageRGBD(
     }
 
     // step 2 ：将深度相机的disparity转为Depth , 也就是转换成为真正尺度下的深度
+    //这里的判断条件感觉有些尴尬
+    //前者和后者满足一个就可以了
+    //满足前者意味着,mDepthMapFactor 相对1来讲要足够大
+    //满足后者意味着,如果深度图像不是浮点型? 才会执行
+    //意思就是说,如果读取到的深度图像是浮点型,就不执行这个尺度的变换操作了呗? TODO 
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
         imDepth.convertTo(  //将图像转换成为另外一种数据类型,具有可选的数据大小缩放系数
             imDepth,            //输出图像
@@ -429,7 +445,7 @@ void Tracking::Track()
     // 如果图像复位过、或者第一次运行，则为NO_IMAGE_YET状态
     if(mState==NO_IMAGES_YET)
     {
-        mState = NOT_INITIALIZED;
+        mState = NOT_INITIALIZED;// 有图像但是没有完成初始化 ？？？？为什么要这样，实际上有图像加载了吗
     }
 
     // mLastProcessedState 存储了Tracking最新的状态，用于FrameDrawer中的绘制
@@ -778,7 +794,7 @@ void Tracking::StereoInitialization()
         // KeyFrame包含Frame、地图3D点、以及BoW
         // KeyFrame里有一个mpMap，Tracking里有一个mpMap，而KeyFrame里的mpMap都指向Tracking里的这个mpMap
         // KeyFrame里有一个mpKeyFrameDB，Tracking里有一个mpKeyFrameDB，而KeyFrame里的mpMap都指向Tracking里的这个mpKeyFrameDB
-        // 提问: 为什么要指向Tracking中的相应的变量呢? -- 因为Tracking是主线程，是它创建和加载的这些模块
+        // 提问: 为什么要指向Tracking中的相应的变量呢? -- 因为Tracking是主线程，是它创建和加载的这些模块 ？？？
         KeyFrame* pKFini = new KeyFrame(mCurrentFrame,mpMap,mpKeyFrameDB);
 
         // Insert KeyFrame in the map
@@ -814,7 +830,7 @@ void Tracking::StereoInitialization()
                 // 在地图中添加该MapPoint
                 mpMap->AddMapPoint(pNewMP);
                 // 表示该KeyFrame的哪个特征点可以观测到哪个3D点
-                pKFini->AddMapPoint(pNewMP,i);
+                pKFini->AddMapPoint(pNewMP,i);//i代表当前关键帧中的当前特征点的索引
 
                 // 将该MapPoint添加到当前帧的mvpMapPoints中
                 // 为当前Frame的特征点与MapPoint之间建立索引
@@ -832,6 +848,7 @@ void Tracking::StereoInitialization()
         mnLastKeyFrameId=mCurrentFrame.mnId;
         mpLastKeyFrame = pKFini;
 
+        //看不懂这块在干嘛???
         mvpLocalKeyFrames.push_back(pKFini);
         //? 这个局部地图点竟然..不在mpLocalMapper中管理?
         // 我现在的想法是，这个点只是暂时被保存在了 Tracking 线程之中， 所以称之为 local 
@@ -868,7 +885,7 @@ void Tracking::StereoInitialization()
 void Tracking::MonocularInitialization()
 {
     // Step 1 如果单目初始器还没有被创建，则创建。后面如果重新初始化时会清掉这个
-    if(!mpInitializer)
+    if(!mpInitializer)//单目初始化的指针
     {
         // Set Reference Frame
         // 单目初始帧的特征点数必须大于100
@@ -889,11 +906,12 @@ void Tracking::MonocularInitialization()
                 delete mpInitializer;
 
             // 由当前帧构造初始器 sigma:1.0 iterations:200
-            mpInitializer =  new Initializer(mCurrentFrame,1.0,200);
+            mpInitializer =  new Initializer(mCurrentFrame,1.0,200);//根据参考帧构造初始化器
 
             // 初始化为-1 表示没有任何匹配。这里面存储的是匹配的点的id
+            //  fill()函數也可以用於填充容器中某個範圍內的值。它接受兩個開始和結束的迭代器，
+            // 並在容器中填充一個值，該值從begin所指向的位置開始，並在end所指向的位置之前。
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
-
             return;
         }
     }
@@ -905,7 +923,7 @@ void Tracking::MonocularInitialization()
         if((int)mCurrentFrame.mvKeys.size()<=100)
         {
             delete mpInitializer;
-            mpInitializer = static_cast<Initializer*>(NULL);
+            mpInitializer = static_cast<Initializer*>(NULL);//？？？
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
             return;
         }
@@ -930,7 +948,7 @@ void Tracking::MonocularInitialization()
         if(nmatches<100)
         {
             delete mpInitializer;
-            mpInitializer = static_cast<Initializer*>(NULL);
+            mpInitializer = static_cast<Initializer*>(NULL);//???
             return;
         }
 
@@ -938,8 +956,8 @@ void Tracking::MonocularInitialization()
         cv::Mat tcw; // Current Camera Translation
         vector<bool> vbTriangulated; // Triangulated Correspondences (mvIniMatches)
 
-        // Step 5 通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints
-        if(mpInitializer->Initialize(
+        // Step 5 通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints ？？？
+        if(mpInitializer->Initialize(//？？？
             mCurrentFrame,      //当前帧
             mvIniMatches,       //当前帧和参考帧的特征点的匹配关系
             Rcw, tcw,           //初始化得到的相机的位姿
@@ -960,10 +978,10 @@ void Tracking::MonocularInitialization()
             // Step 7 将初始化的第一帧作为世界坐标系，因此第一帧变换矩阵为单位矩阵
             mInitialFrame.SetPose(cv::Mat::eye(4,4,CV_32F));
             // 由Rcw和tcw构造Tcw,并赋值给mTcw，mTcw为世界坐标系到相机坐标系的变换矩阵
-            cv::Mat Tcw = cv::Mat::eye(4,4,CV_32F);
-            Rcw.copyTo(Tcw.rowRange(0,3).colRange(0,3));
-            tcw.copyTo(Tcw.rowRange(0,3).col(3));
-            mCurrentFrame.SetPose(Tcw);
+            cv::Mat Tcw = cv::Mat::eye(4,4,CV_32F);//对角矩阵
+            Rcw.copyTo(Tcw.rowRange(0,3).colRange(0,3));//将Rcw的内容粘贴到TCW的对应位置
+            tcw.copyTo(Tcw.rowRange(0,3).col(3));//将tcw的内容粘贴到Tcw的对应位置
+            mCurrentFrame.SetPose(Tcw);//当前帧的世界坐标系到相机坐标系的变换矩阵
 
             // Step 8 创建初始化地图点MapPoints
             // Initialize函数会得到mvIniP3D，
@@ -986,7 +1004,7 @@ void Tracking::CreateInitialMapMonocular()
 
     // Step 1 将初始关键帧,当前关键帧的描述子转为BoW
     pKFini->ComputeBoW();
-    pKFcur->ComputeBoW();
+    pKFcur->ComputeBoW();//没时间继续深入看
 
     // Insert KFs in the map
     // Step 2 将关键帧插入到地图
@@ -1008,7 +1026,7 @@ void Tracking::CreateInitialMapMonocular()
         cv::Mat worldPos(mvIniP3D[i]);
 
         // Step 3.1 用3D点构造MapPoint
-        MapPoint* pMP = new MapPoint(
+        MapPoint* pMP = new MapPoint(//？？？没有时间继续看
             worldPos,
             pKFcur, 
             mpMap);
@@ -1019,8 +1037,8 @@ void Tracking::CreateInitialMapMonocular()
         // c.该MapPoint的平均观测方向和深度范围
 
         // 表示该KeyFrame的2D特征点和对应的3D地图点
-        pKFini->AddMapPoint(pMP,i);
-        pKFcur->AddMapPoint(pMP,mvIniMatches[i]);
+        pKFini->AddMapPoint(pMP,i);///？？？
+        pKFcur->AddMapPoint(pMP,mvIniMatches[i]);//？？？
 
         // a.表示该MapPoint可以被哪个KeyFrame的哪个特征点观测到
         pMP->AddObservation(pKFini,i);
@@ -1124,7 +1142,7 @@ void Tracking::CheckReplacedInLastFrame()
 {
     for(int i =0; i<mLastFrame.N; i++)
     {
-        MapPoint* pMP = mLastFrame.mvpMapPoints[i];
+        MapPoint* pMP = mLastFrame.mvpMapPoints[i];//上一帧中特征点对应的地图点
         //如果这个地图点存在
         if(pMP)
         {
@@ -1159,8 +1177,9 @@ bool Tracking::TrackReferenceKeyFrame()
 
     // We perform first an ORB matching with the reference keyframe
     // If enough matches are found we setup a PnP solver
+    // 首先执行与参考关键帧匹配的ORB
     ORBmatcher matcher(0.7,true);
-    vector<MapPoint*> vpMapPointMatches;
+    vector<MapPoint*> vpMapPointMatches;//匹配存储匹配关系的地图点
 
     // Step 2：通过词袋BoW加速当前帧与参考帧之间的特征点匹配
     int nmatches = matcher.SearchByBoW(
@@ -1211,21 +1230,22 @@ bool Tracking::TrackReferenceKeyFrame()
 /**
  * @brief 更新上一帧位姿，在上一帧中生成临时地图点
  * 单目情况：只计算了上一帧的世界坐标系位姿
- * 双目和rgbd情况：选取有有深度值的并且没有被选为地图点的点生成新的临时地图点，提高跟踪鲁棒性
+ * 双目和rgbd情况：选取有有深度值的并且没有被选为地图点的点生成新的临时地图点，提高跟踪鲁棒性 ???
  */
 void Tracking::UpdateLastFrame()
 {
     // Update pose according to reference keyframe
-    // Step 1：利用参考关键帧更新上一帧在世界坐标系下的位姿
+    // Step 1：利用参考关键帧更新上一帧在世界坐标系下的位姿 = 上一帧到其参考帧位姿 * 其参考帧到世界坐标系(系统第一帧)位姿
     // 上一普通帧的参考关键帧，注意这里用的是参考关键帧（位姿准）而不是上上一帧的普通帧
     KeyFrame* pRef = mLastFrame.mpReferenceKF;  
     // ref_keyframe 到 lastframe的位姿变换
-    cv::Mat Tlr = mlRelativeFramePoses.back();
+    cv::Mat Tlr = mlRelativeFramePoses.back();//???此处的mlRelativeFramePoses是什么意思
 
     // 将上一帧的世界坐标系下的位姿计算出来
     // l:last, r:reference, w:world
     // Tlw = Tlr*Trw 
-    mLastFrame.SetPose(Tlr*pRef->GetPose()); 
+    // SetPose:用 Tcw 更新 mTcw 以及类中存储的一系列位姿
+    mLastFrame.SetPose(Tlr*pRef->GetPose()/*获取参考关键帧从世界坐标系到当前帧相机位姿的变换矩阵*/); 
 
     // 如果上一帧为关键帧，或者单目的情况，则退出
     if(mnLastKeyFrameId==mLastFrame.mnId || mSensor==System::MONOCULAR)
@@ -1237,7 +1257,7 @@ void Tracking::UpdateLastFrame()
     // Create "visual odometry" MapPoints
     // We sort points according to their measured depth by the stereo/RGB-D sensor
     // Step 2.1：得到上一帧中具有有效深度值的特征点（不一定是地图点）
-    vector<pair<float,int> > vDepthIdx;
+    vector<pair<float,int> > vDepthIdx;// 具有有效深度值得特征点，第一个值代表的是有效深度，第二个值代表的是对应得特征点的ID
     vDepthIdx.reserve(mLastFrame.N);
 
     for(int i=0; i<mLastFrame.N;i++)
@@ -1254,7 +1274,7 @@ void Tracking::UpdateLastFrame()
     if(vDepthIdx.empty())
         return;
 
-    // 按照深度从小到大排序
+    // 按照深度从小到大排序，特征点由近到远进行排序
     sort(vDepthIdx.begin(),vDepthIdx.end());
 
     // We insert all close points (depth<mThDepth)
@@ -1263,15 +1283,15 @@ void Tracking::UpdateLastFrame()
     int nPoints = 0;
     for(size_t j=0; j<vDepthIdx.size();j++)
     {
-        int i = vDepthIdx[j].second;
+        int i = vDepthIdx[j].second;//有效深度点对应的特征点ID
 
         bool bCreateNew = false;
 
         // 如果这个点对应在上一帧中的地图点没有,或者创建后就没有被观测到,那么就生成一个临时的地图点
-        MapPoint* pMP = mLastFrame.mvpMapPoints[i];
-        if(!pMP)
-            bCreateNew = true;
-        else if(pMP->Observations()<1)      
+        MapPoint* pMP = mLastFrame.mvpMapPoints[i];//此处代表特征点对应的上一帧地图点
+        if(!pMP)// 如果上一帧中没有该特征点对应的地图点
+            bCreateNew = true;// 如果没有该地图点，创建生成一个临时的地图点
+        else if(pMP->Observations()<1) // 如果有该地图点，但是未被观测到   
         {
             // 地图点被创建后就没有被观测，认为不靠谱，也需要重新创建
             bCreateNew = true;
@@ -1293,12 +1313,12 @@ void Tracking::UpdateLastFrame()
 
             // 标记为临时添加的MapPoint，之后在CreateNewKeyFrame之前会全部删除
             mlpTemporalPoints.push_back(pNewMP);
-            nPoints++;
+            nPoints++;//？？？？
         }
         else
         {
             // 因为从近到远排序，记录其中不需要创建地图点的个数
-            nPoints++;
+            nPoints++;//？？？？Trista个人理解是不是只选取距离相对较近的特征点，距离远的时候就不准确了，因此，这个nPoints用于计数
         }
 
         // Step 2.4：如果地图点质量不好，停止创建地图点
@@ -1312,16 +1332,21 @@ void Tracking::UpdateLastFrame()
 
 /**
  * @brief 根据恒定速度模型用上一帧地图点来对当前帧进行跟踪
+ * 其实在SLAM模式下，如果不是没有运动速度或刚完成重定位则会优先尝试恒速运动模型，
+ * 当匹配的特征点较少时再选择关键帧模式；这个模型是假设物体处于匀速运动，例如匀
+ * 速运动的汽车、机器人、行人等，就可以用上一帧的位姿和速度来估计当前帧的位姿，
+ * 恒速运动模型实现函数为Tracking::TrackWithMotionModel()，匹配是通过投影来与
+ * 上一帧看到的地图点匹配，使用的是 ==matcher.SearchByProjection()==
  * Step 1：更新上一帧的位姿；对于双目或RGB-D相机，还会根据深度值生成临时地图点
- * Step 2：根据上一帧特征点对应地图点进行投影匹配
- * Step 3：优化当前帧位姿
+ * Step 2：根据上一帧特征点对应地图点进行投影匹配（不够就扩大半径）
+ * Step 3：利用3D-2D投影关系，优化当前帧位姿
  * Step 4：剔除地图点中外点
  * @return 如果匹配数大于10，认为跟踪成功，返回true
  */
 bool Tracking::TrackWithMotionModel()
 {
-    // 最小距离 < 0.9*次小距离 匹配成功，检查旋转
-    ORBmatcher matcher(0.9,true);
+    //  创建 ORB 特征提取器：最小距离 < 0.9 倍次小距离才匹配成功最小距离  匹配成功，检查旋转
+    ORBmatcher matcher(0.9,true);//最优/次优评分的比例为0.9，检查方向                       
 
     // Update last frame pose according to its reference keyframe
     // Create "visual odometry" points
@@ -1331,7 +1356,7 @@ bool Tracking::TrackWithMotionModel()
     // Step 2：根据之前估计的速度，用恒速模型得到当前帧的初始位姿。
     mCurrentFrame.SetPose(mVelocity*mLastFrame.mTcw);
     
-    // 清空当前帧的地图点
+    // 清空当前帧的特征点对应的地图点
     fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
 
     // Project points seen in previous frame
@@ -1342,14 +1367,14 @@ bool Tracking::TrackWithMotionModel()
     else
         th=7;//双目
 
-    // Step 3：用上一帧地图点进行投影匹配，如果匹配点不够，则扩大搜索半径再来一次
+    // Step 3：用上一帧地图点进行投影匹配，如果匹配点不够20个，则扩大搜索半径再来一次
     int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR);
 
     // If few matches, uses a wider window search
     // 如果匹配点太少，则扩大搜索半径再来一次
     if(nmatches<20)
     {
-        fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
+        fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));//清空当前帧中的匹配地图点
         nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,2*th,mSensor==System::MONOCULAR); // 2*th
     }
 
@@ -1366,9 +1391,9 @@ bool Tracking::TrackWithMotionModel()
     int nmatchesMap = 0;
     for(int i =0; i<mCurrentFrame.N; i++)
     {
-        if(mCurrentFrame.mvpMapPoints[i])
+        if(mCurrentFrame.mvpMapPoints[i])//当前帧中当前地图点存在匹配特征点
         {
-            if(mCurrentFrame.mvbOutlier[i])
+            if(mCurrentFrame.mvbOutlier[i])//如果当前地图点是外点
             {
                 // 如果优化后判断某个地图点是外点，清除它的所有关系
                 MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
@@ -2008,7 +2033,7 @@ void Tracking::UpdateLocalKeyFrames()
  * 
  * Step 1：计算当前帧特征点的词袋向量
  * Step 2：找到与当前帧相似的候选关键帧
- * Step 3：通过BoW进行匹配
+ * Step 3：通过BoW进行加速ORB特征匹配
  * Step 4：通过EPnP算法估计姿态
  * Step 5：通过PoseOptimization对姿态进行优化求解
  * Step 6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
@@ -2021,6 +2046,7 @@ bool Tracking::Relocalization()
 
     // Relocalization is performed when tracking is lost
     // Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
+    // Track lost: 查询关键帧数据库以获取重定位的关键帧候选者
     // Step 2：用词袋找到与当前帧相似的候选关键帧
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame);
     
@@ -2028,11 +2054,11 @@ bool Tracking::Relocalization()
     if(vpCandidateKFs.empty())
         return false;
 
-    const int nKFs = vpCandidateKFs.size();
+    const int nKFs = vpCandidateKFs.size();// 和当前帧相似的候选关键帧的数量
 
     // We perform first an ORB matching with each candidate
     // If enough matches are found we setup a PnP solver
-    ORBmatcher matcher(0.75,true);
+    ORBmatcher matcher(0.75,true);// 创建 ORB特征点匹配器 最小距离 < 0.75 倍的次小距离则匹配成功
     //每个关键帧的解算器
     vector<PnPsolver*> vpPnPsolvers;
     vpPnPsolvers.resize(nKFs);
@@ -2052,11 +2078,11 @@ bool Tracking::Relocalization()
     for(int i=0; i<nKFs; i++)
     {
         KeyFrame* pKF = vpCandidateKFs[i];
-        if(pKF->isBad())
+        if(pKF->isBad())// 如果是坏点就直接丢弃
             vbDiscarded[i] = true;
         else
         {
-            // 当前帧和候选关键帧用BoW进行快速匹配，匹配结果记录在vvpMapPointMatches，nmatches表示匹配的数目
+            // 当前帧和候选关键帧用BoW进行快速匹配，匹配结果记录在vvpMapPointMatches，nmatches表示成功匹配的数目
             int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i]);
             // 如果和当前帧的匹配数小于15,那么只能放弃这个关键帧
             if(nmatches<15)
@@ -2068,8 +2094,8 @@ bool Tracking::Relocalization()
             {
                 // 如果匹配数目够用，用匹配结果初始化EPnPsolver
                 // 为什么用EPnP? 因为计算复杂度低，精度高
-                PnPsolver* pSolver = new PnPsolver(mCurrentFrame,vvpMapPointMatches[i]);
-                pSolver->SetRansacParameters(
+                PnPsolver* pSolver = new PnPsolver(mCurrentFrame,vvpMapPointMatches[i]);//对当前帧和候选帧创建 PnPsolver 位姿变换求解器 
+                pSolver->SetRansacParameters(//？？？
                     0.99,   //用于计算RANSAC迭代次数理论值的概率
                     10,     //最小内点数, 但是要注意在程序中实际上是min(给定最小内点数,最小集,内点数理论值),不一定使用这个
                     300,    //最大迭代次数
@@ -2085,27 +2111,24 @@ bool Tracking::Relocalization()
     // Alternatively perform some iterations of P4P RANSAC
     // Until we found a camera pose supported by enough inliers
     // 这里的 P4P RANSAC是Epnp，每次迭代需要4个点
-    // 是否已经找到相匹配的关键帧的标志
-    bool bMatch = false;
+    
+    bool bMatch = false;// 是否已经找到相匹配的关键帧的标志
     ORBmatcher matcher2(0.9,true);
 
     // Step 4: 通过一系列操作,直到找到能够匹配上的关键帧
     // 为什么搞这么复杂？答：是担心误闭环
     while(nCandidates>0 && !bMatch)
     {
-        //遍历当前所有的候选关键帧
+        //遍历当前所有的候选关键帧（和当前关键帧相似的关键帧作为候选关键帧）
         for(int i=0; i<nKFs; i++)
         {
             // 忽略放弃的
             if(vbDiscarded[i])
                 continue;
     
-            //内点标记
-            vector<bool> vbInliers;     
-            
-            //内点数
-            int nInliers;
-            
+            vector<bool> vbInliers; //内点标记  
+            int nInliers;//内点数 
+
             // 表示RANSAC已经没有更多的迭代次数可用 -- 也就是说数据不够好，RANSAC也已经尽力了。。。
             bool bNoMore;
 
@@ -2285,28 +2308,44 @@ void Tracking::Reset()
         mpViewer->Release();
 }
 
+
+
 //? 目测是根据配置文件中的参数重新改变已经设置在系统中的参数,但是当前文件中没有找到对它的调用
 void Tracking::ChangeCalibration(const string &strSettingPath)
 {
+    /* Check settings file读取相机配置文件路径：
+    * 补充：此处的fsSetting接口配置：
+    cv::FileStorage(const string& source, int flags， const string& encoding=string());
+    * 其中，
+    * source –存储或读取数据的文件名（字符串），其扩展名(.xml 或 .yml/.yaml)决定文件格式。
+    * flags – 操作模式，cv::FileStorage::READ包括打开文件进行读操作
+    */
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    float fx = fSettings["Camera.fx"];
-    float fy = fSettings["Camera.fy"];
-    float cx = fSettings["Camera.cx"];
+    float fx = fSettings["Camera.fx"];// 表示的焦距的参数，实际上就是焦距f * alpha (alpha 表示在u坐标轴上得缩放系数)
+    float fy = fSettings["Camera.fy"];// 表示的焦距的参数，实际上就是焦距f * beta (beta表示在u坐标轴上得缩放系数)
+    float cx = fSettings["Camera.cx"];// 主偏移量
     float cy = fSettings["Camera.cy"];
 
+    //     |fx  0   cx|
+    // K = |0   fy  cy|
+    //     |0   0   1 |
+    //构造相机内参矩阵
     cv::Mat K = cv::Mat::eye(3,3,CV_32F);
     K.at<float>(0,0) = fx;
     K.at<float>(1,1) = fy;
     K.at<float>(0,2) = cx;
     K.at<float>(1,2) = cy;
-    K.copyTo(mK);
+    K.copyTo(mK);//将相机的内参矩阵拷贝到mK矩阵中
 
+    // 图像矫正系数
+    // [k1 k2 p1 p2 k3]
     cv::Mat DistCoef(4,1,CV_32F);
-    DistCoef.at<float>(0) = fSettings["Camera.k1"];
-    DistCoef.at<float>(1) = fSettings["Camera.k2"];
-    DistCoef.at<float>(2) = fSettings["Camera.p1"];
-    DistCoef.at<float>(3) = fSettings["Camera.p2"];
-    const float k3 = fSettings["Camera.k3"];
+    DistCoef.at<float>(0) = fSettings["Camera.k1"];// 径向矫正的过程中，主要矫正畸变较小的图像中心区域
+    DistCoef.at<float>(1) = fSettings["Camera.k2"];// 径向矫正的过程中，主要矫正即便较大的边缘区域地区
+    DistCoef.at<float>(2) = fSettings["Camera.p1"];// 切向畸变矫正系数
+    DistCoef.at<float>(3) = fSettings["Camera.p2"];// 切向畸变矫正系数
+    const float k3 = fSettings["Camera.k3"];//鱼眼相机中特有的
+    //有些相机的畸变系数中会没有k3项
     if(k3!=0)
     {
         DistCoef.resize(5);

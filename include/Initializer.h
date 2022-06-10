@@ -45,7 +45,7 @@ namespace ORB_SLAM2
  */
 class Initializer
 {
-    typedef pair<int,int> Match;
+    typedef pair<int,int> Match;//帧1和帧2中匹配的序列号的值，第一项代表第一帧（参考帧）中的序列号，第二项代表当前帧中的序列号
 
 public:
 

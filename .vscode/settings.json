@@ -101,6 +101,19 @@
 		"xstddef": "cpp",
 		"xstring": "cpp",
 		"xtr1common": "cpp",
-		"xutility": "cpp"
+		"xutility": "cpp",
+		"array": "cpp",
+		"atomic": "cpp",
+		"bit": "cpp",
+		"charconv": "cpp",
+		"clocale": "cpp",
+		"compare": "cpp",
+		"format": "cpp",
+		"forward_list": "cpp",
+		"locale": "cpp",
+		"optional": "cpp",
+		"stop_token": "cpp",
+		"xlocbuf": "cpp",
+		"xlocmes": "cpp"
 	}
 }

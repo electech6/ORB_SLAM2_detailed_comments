@@ -1137,8 +1137,8 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
   const std::vector<TDescriptor>& features,
   BowVector &v, FeatureVector &fv, int levelsup) const
 {
-  v.clear();
-  fv.clear();
+  v.clear();//BowVector 向量清空
+  fv.clear();//FeatureVector 向量清空
   
   if(empty()) // safe for subclasses
   {
@@ -1148,7 +1148,7 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
   // normalize 
   // 根据选择的评分类型来确定是否需要将BowVector 归一化
   LNorm norm;
-  bool must = m_scoring_object->mustNormalize(norm);
+  bool must = m_scoring_object->mustNormalize(norm);//？？？？
   
   typename vector<TDescriptor>::const_iterator fit;
   

@@ -859,6 +859,7 @@ void LoopClosing::CorrectLoop()
     // Add loop edge
     // Step 7：添加当前帧与闭环匹配帧之间的边（这个连接关系不优化）
     // 它在下一次的本质图优化里面使用
+	// !这两句话应该放在OptimizeEssentialGraph之前，因为OptimizeEssentialGraph的步骤4.2中有优化
     mpMatchedKF->AddLoopEdge(mpCurrentKF);
     mpCurrentKF->AddLoopEdge(mpMatchedKF);
 
@@ -1034,7 +1035,8 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 for(set<KeyFrame*>::const_iterator sit=sChilds.begin();sit!=sChilds.end();sit++)
                 {
                     KeyFrame* pChild = *sit;
-                    // mnBAGlobalForKF记录是由于哪个闭环匹配关键帧触发的全局BA,并且已经经过了GBA的优化。
+                    // 记录避免重复
+					// mnBAGlobalForKF记录是由于哪个闭环匹配关键帧触发的全局BA,并且已经经过了GBA的优化。
                     if(pChild->mnBAGlobalForKF!=nLoopKF)
                     {
                         // 从父关键帧到当前子关键帧的位姿变换 T_child_farther
@@ -1042,7 +1044,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                         // 再利用优化后的父关键帧的位姿，转换到世界坐标系下，相当于更新了子关键帧的位姿
                         // 这种最小生成树中除了根节点，其他的节点都会作为其他关键帧的子节点，这样做可以使得最终所有的关键帧都得到了优化
                         pChild->mTcwGBA = Tchildc*pKF->mTcwGBA;
-                        // 做个标记
+                        // 做个标记，避免重复
                         pChild->mnBAGlobalForKF=nLoopKF;
 
                     }

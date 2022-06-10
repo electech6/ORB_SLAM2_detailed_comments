@@ -46,9 +46,9 @@ namespace ORB_SLAM2
 {
 
 // 要用到的一些阈值
-const int ORBmatcher::TH_HIGH = 100;
-const int ORBmatcher::TH_LOW = 50;
-const int ORBmatcher::HISTO_LENGTH = 30;
+const int ORBmatcher::TH_HIGH = 100;    // 特征匹配对应的描述子的阈值下限
+const int ORBmatcher::TH_LOW = 50;      // 特征匹配对应的描述子的阈值上限
+const int ORBmatcher::HISTO_LENGTH = 30;// 旋转直方图中的高度为30
 
 // 构造函数,参数默认值为0.6,true
 ORBmatcher::ORBmatcher(float nnratio, bool checkOri): mfNNratio(nnratio), mbCheckOrientation(checkOri)
@@ -71,7 +71,7 @@ ORBmatcher::ORBmatcher(float nnratio, bool checkOri): mfNNratio(nnratio), mbChec
  */
 int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoints, const float th)
 {
-    int nmatches=0;
+    int nmatches=0;// 匹配的点对
 
     // 如果 th！=1 (RGBD 相机或者刚刚进行过重定位), 需要扩大范围搜索
     const bool bFactor = th!=1.0;
@@ -82,7 +82,7 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
         MapPoint* pMP = vpMapPoints[iMP];
 
         // 判断该点是否要投影
-        if(!pMP->mbTrackInView)
+        if(!pMP->mbTrackInView)// - SearchByProjection 中决定是否对该点进行投影的变量
             continue;
 
         if(pMP->isBad())
@@ -109,7 +109,7 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
         if(vIndices.empty())
             continue;
 
-        const cv::Mat MPdescriptor = pMP->GetDescriptor();
+        const cv::Mat MPdescriptor = pMP->GetDescriptor();//局部地图点的描述子
 
         // 最优的次优的描述子距离和index
         int bestDist=256;
@@ -227,7 +227,7 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
 
     // Step 3 判断误差是否满足条件。尺度越大，误差范围应该越大。
     // 金字塔最底层一个像素就占一个像素，在倒数第二层，一个像素等于最底层1.2个像素（假设金字塔尺度为1.2）
-    // 3.84 是自由度为1时，服从高斯分布的一个平方项（也就是这里的误差）小于一个像素，这件事发生概率超过95%时的概率 （卡方分布）
+    // ??Trista dont know:3.84 是自由度为1时，服从高斯分布的一个平方项（也就是这里的误差）小于一个像素，这件事发生概率超过95%时的概率 （卡方分布）
     return dsqr < 3.84*pKF2->mvLevelSigma2[kp2.octave];
 }
 
@@ -246,15 +246,14 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
  */
 int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
 {
-    // 获取该关键帧的地图点
+    // 获取该关键帧pKF所匹配的地图点mvpMapPoints
     const vector<MapPoint*> vpMapPointsKF = pKF->GetMapPointMatches();
 
-    // 和普通帧F特征点的索引一致
+    // 和当前普通帧F特征点的索引一致
     vpMapPointMatches = vector<MapPoint*>(F.N,static_cast<MapPoint*>(NULL));
 
     // 取出关键帧的词袋特征向量
-    const DBoW2::FeatureVector &vFeatVecKF = pKF->mFeatVec;
-
+    const DBoW2::FeatureVector &vFeatVecKF = pKF->mFeatVec;//NodeId 表示节点id，std::vector<unsigned int> 中实际存的是该节点id下所有特征点在图像中的索引
     int nmatches=0;
 
     // 特征点角度旋转差统计用的直方图
@@ -264,14 +263,15 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
 
     // 将0~360的数转换到0~HISTO_LENGTH的系数
     // !原作者代码是 const float factor = 1.0f/HISTO_LENGTH; 是错误的，更改为下面代码  
-    const float factor = HISTO_LENGTH/360.0f;
+    const float factor = HISTO_LENGTH/360.0f;//每角度°代表的直方图高度
 
     // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
-    // 将属于同一节点(特定层)的ORB特征进行匹配
-    DBoW2::FeatureVector::const_iterator KFit = vFeatVecKF.begin();
-    DBoW2::FeatureVector::const_iterator Fit = F.mFeatVec.begin();
-    DBoW2::FeatureVector::const_iterator KFend = vFeatVecKF.end();
-    DBoW2::FeatureVector::const_iterator Fend = F.mFeatVec.end();
+    // 将属于同一节点(特定层)的ORB特征进行匹配???同一node是什么意思
+    // 怎样去理解特征向量FeatureVector？内部其实是个std::map<NodeId,std::vector<unsigned int>>
+    DBoW2::FeatureVector::const_iterator KFit = vFeatVecKF.begin();// 关键帧中的迭代器-初始
+    DBoW2::FeatureVector::const_iterator Fit = F.mFeatVec.begin(); // 普通当前帧中所有迭代器-初始
+    DBoW2::FeatureVector::const_iterator KFend = vFeatVecKF.end(); // 关键帧中的迭代器-结束
+    DBoW2::FeatureVector::const_iterator Fend = F.mFeatVec.end();  // 普通当前帧中所有迭代器- 结束
 
     while(KFit != KFend && Fit != Fend)
     {
@@ -279,27 +279,28 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
         // first 元素就是node id，遍历
         if(KFit->first == Fit->first) 
         {
-            // second 是该node内存储的feature index
+            // second 是该node内存储的feature index--该节点id下所有特征点在图像中的索引
             const vector<unsigned int> vIndicesKF = KFit->second;
             const vector<unsigned int> vIndicesF = Fit->second;
 
             // Step 2：遍历KF中属于该node的特征点
             for(size_t iKF=0; iKF<vIndicesKF.size(); iKF++)
             {
-                // 关键帧该节点中特征点的索引
+                // 特征点在该关键帧该节点中的实际索引
                 const unsigned int realIdxKF = vIndicesKF[iKF];
 
                 // 取出KF中该特征对应的地图点
                 MapPoint* pMP = vpMapPointsKF[realIdxKF]; 
 
+                //该地图点不能没有也不能是坏点，对不符合条件的点进行剔除
                 if(!pMP)
                     continue;
-
                 if(pMP->isBad())
                     continue;
 
-                const cv::Mat &dKF= pKF->mDescriptors.row(realIdxKF); // 取出KF中该特征对应的描述子
+                const cv::Mat &dKF= pKF->mDescriptors.row(realIdxKF); // 取出KF中该特征对应的描述子???为什么是row
 
+                //定义并设置最佳匹配距离和次佳匹配距离的初始值
                 int bestDist1=256; // 最好的距离（最小距离）
                 int bestIdxF =-1 ;
                 int bestDist2=256; // 次好距离（倒数第二小距离）
@@ -310,12 +311,12 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
                     // 和上面for循环重名了,这里的realIdxF是指普通帧该节点中特征点的索引
                     const unsigned int realIdxF = vIndicesF[iF];
 
-                    // 如果地图点存在，说明这个点已经被匹配过了，不再匹配，加快速度
+                    // 如果地图点存在，说明这个点已经被匹配过 了，不再匹配，加快速度
                     if(vpMapPointMatches[realIdxF])
                         continue;
 
                     const cv::Mat &dF = F.mDescriptors.row(realIdxF); // 取出F中该特征对应的描述子
-                    // 计算描述子的距离
+                    // 计算orb描述子的距离
                     const int dist =  DescriptorDistance(dKF,dF); 
 
                     // 遍历，记录最佳距离、最佳距离对应的索引、次佳距离等
@@ -371,12 +372,12 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
         else if(KFit->first < Fit->first)
         {
             // 对齐
-            KFit = vFeatVecKF.lower_bound(Fit->first);
+            KFit = vFeatVecKF.lower_bound(Fit->first);//lower_bound在指定区域内查找不小于目标值的第一个元素
         }
         else
         {
             // 对齐
-            Fit = F.mFeatVec.lower_bound(KFit->first);
+            Fit = F.mFeatVec.lower_bound(KFit->first);//lower_bound在指定区域内查找不小于目标值的第一个元素
         }
     }
 
@@ -422,21 +423,23 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
  */
 int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapPoint*> &vpPoints, vector<MapPoint*> &vpMatched, int th)
 {
-    // Get Calibration Parameters for later projection
-    const float &fx = pKF->fx;
+    // Get Calibration Parameters for later projection如果不理解可以参考slam14讲中的相机模型公式
+    const float &fx = pKF->fx;// 获取标定参数方便之后的投影工作
     const float &fy = pKF->fy;
     const float &cx = pKF->cx;
     const float &cy = pKF->cy;
 
     // Decompose Scw
     // Step 1 分解Sim变换矩阵
-    // 这里的尺度在Pc归一化时会被约掉。可以理解为投影的时候不需要尺度，因为变换到了射线上，尺度无关
+    //? 为什么要剥离尺度信息？
+	// 这里的尺度在Pc归一化时会被约掉。可以理解为投影的时候不需要尺度，因为变换到了射线上，尺度无关
     // 尺度会在后面优化的时候用到
-    cv::Mat sRcw = Scw.rowRange(0,3).colRange(0,3);
-    const float scw = sqrt(sRcw.row(0).dot(sRcw.row(0)));   // 计算得到尺度s
+    cv::Mat sRcw = Scw.rowRange(0,3).colRange(0,3);// 当前KF和闭环KF之间的Sim3变换
+    //dot是矩阵的点乘，但是这里的dot点乘返回的是double类型，不能直接赋值给cv::Mat
+    const float scw = sqrt(sRcw.row(0).dot(sRcw.row(0)));   // 计算得到尺度s,
     cv::Mat Rcw = sRcw/scw;                                 // 保证旋转矩阵行列式为1
     cv::Mat tcw = Scw.rowRange(0,3).col(3)/scw;             // 去掉尺度后的平移向量
-    cv::Mat Ow = -Rcw.t()*tcw;                              // 世界坐标系下相机光心坐标
+    cv::Mat Ow = -Rcw.t()*tcw;                              // 世界坐标系下相机光心坐标？？？
 
     // Set of MapPoints already found in the KeyFrame
     // 使用set类型，记录前面已经成功的匹配关系，避免重复匹配。并去除其中无效匹配关系（NULL）
@@ -447,9 +450,9 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
 
     // For each Candidate MapPoint Project and Match
     // Step 2 遍历闭环KF及其共视KF的所有地图点（不考虑当前KF已经匹配的地图点）投影到当前KF
-    for(int iMP=0, iendMP=vpPoints.size(); iMP<iendMP; iMP++)
+    for(int iMP=0, iendMP=vpPoints.size(); iMP<iendMP; iMP++)// 遍历闭环KF及其共视KF的地图点
     {
-        MapPoint* pMP = vpPoints[iMP];
+        MapPoint* pMP = vpPoints[iMP];//遍历到的当前闭环KF及其共视KF的地图点
 
         // Discard Bad MapPoints and already found
         // Step 2.1 丢弃坏点，跳过当前KF已经匹配上的地图点
@@ -461,7 +464,7 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
         cv::Mat p3Dw = pMP->GetWorldPos();
 
         // Transform into Camera Coords.
-        cv::Mat p3Dc = Rcw*p3Dw+tcw;
+        cv::Mat p3Dc = Rcw*p3Dw+tcw;//将当前世界坐标系转换成相机坐标系
 
         // Depth must be positive
         // 深度值必须为正
@@ -494,9 +497,9 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
 
         // Viewing angle must be less than 60 deg
         // 观察角度小于60°
-        cv::Mat Pn = pMP->GetNormal();
+        cv::Mat Pn = pMP->GetNormal();//世界坐标系下地图点被多个相机观测的平均观测方向
 
-        if(PO.dot(Pn)<0.5*dist)
+        if(PO.dot(Pn)<0.5*dist)//因为点乘其实相当于A*B = |A|*|B|*COSθ cos60°等于0.5
             continue;
 
         // 根据当前这个地图点距离当前KF光心的距离,预测该点在当前KF中的尺度(图层)
@@ -507,13 +510,13 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
         const float radius = th*pKF->mvScaleFactors[nPredictedLevel];
 
         //  Step 2.3 搜索候选匹配点
-        const vector<size_t> vIndices = pKF->GetFeaturesInArea(u,v,radius);
+        const vector<size_t> vIndices = pKF->GetFeaturesInArea(u,v,radius);//获取某个特征点的邻域中的特征点id
 
         if(vIndices.empty())
             continue;
 
         // Match to the most similar keypoint in the radius
-        const cv::Mat dMP = pMP->GetDescriptor();
+        const cv::Mat dMP = pMP->GetDescriptor();//当前闭环KF及其共视KF的地图点的描述子
 
         int bestDist = 256;
         int bestIdx = -1;
@@ -530,11 +533,11 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
             if(kpLevel<nPredictedLevel-1 || kpLevel>nPredictedLevel)
                 continue;
 
-            const cv::Mat &dKF = pKF->mDescriptors.row(idx);
+            const cv::Mat &dKF = pKF->mDescriptors.row(idx);//当前帧的描述子
 
-            const int dist = DescriptorDistance(dMP,dKF);
+            const int dist = DescriptorDistance(dMP,dKF);//计算当前帧和闭环关键帧的描述子的汉明距离
 
-            if(dist<bestDist)
+            if(dist<bestDist)// 更新最佳匹配距离和序列号
             {
                 bestDist = dist;
                 bestIdx = idx;
@@ -583,14 +586,14 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
         rotHist[i].reserve(500);   
 
     //! 原作者代码是 const float factor = 1.0f/HISTO_LENGTH; 是错误的，更改为下面代码   
-    const float factor = HISTO_LENGTH/360.0f;
+    const float factor = HISTO_LENGTH/360.0f;//常量值 1角度°在旋转直方图中的高度
 
-    // 匹配点对距离，注意是按照F2特征点数目分配空间
+    // 匹配点对距离，注意是按照F2（当前帧）特征点数目分配空间
     vector<int> vMatchedDistance(F2.mvKeysUn.size(),INT_MAX);
-    // 从帧2到帧1的反向匹配，注意是按照F2特征点数目分配空间
+    // 从帧2（当前帧）到帧1（初始化关键帧）的反向匹配，注意是按照F2特征点数目分配空间
     vector<int> vnMatches21(F2.mvKeysUn.size(),-1);
 
-    // 遍历帧1中的所有特征点
+    // 遍历帧1（初始化参考帧）中的所有特征点
     for(size_t i1=0, iend1=F1.mvKeysUn.size(); i1<iend1; i1++)
     {
         cv::KeyPoint kp1 = F1.mvKeysUn[i1];
@@ -600,26 +603,26 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
             continue;
 
         // Step 2 在半径窗口内搜索当前帧F2中所有的候选匹配特征点 
-        // vbPrevMatched 输入的是参考帧 F1的特征点
-        // windowSize = 100，输入最大最小金字塔层级 均为0
+        // vbPrevMatched 输入的是（初始化参考帧） F1的特征点
+        // windowSize = 100，输入最大最小金字塔层级 均为0  ？？？暂时先不要管
         vector<size_t> vIndices2 = F2.GetFeaturesInArea(vbPrevMatched[i1].x,vbPrevMatched[i1].y, windowSize,level1,level1);
 
         // 没有候选特征点，跳过
         if(vIndices2.empty())
             continue;
 
-        // 取出参考帧F1中当前遍历特征点对应的描述子
+        // 取出初始化参考帧F1中当前遍历特征点对应的描述子
         cv::Mat d1 = F1.mDescriptors.row(i1);
 
         int bestDist = INT_MAX;     //最佳描述子匹配距离，越小越好
         int bestDist2 = INT_MAX;    //次佳描述子匹配距离
         int bestIdx2 = -1;          //最佳候选特征点在F2中的index
 
-        // Step 3 遍历搜索搜索窗口中的所有潜在的匹配候选点，找到最优的和次优的
+        // Step 3 遍历搜索 搜索窗口中的所有潜在的匹配候选点，找到最优的和次优的
         for(vector<size_t>::iterator vit=vIndices2.begin(); vit!=vIndices2.end(); vit++)
         {
             size_t i2 = *vit;
-            // 取出候选特征点对应的描述子
+            // 取出当前帧中候选特征点对应的描述子
             cv::Mat d2 = F2.mDescriptors.row(i2);
             // 计算两个特征点描述子距离
             int dist = DescriptorDistance(d1,d2);
@@ -647,12 +650,13 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
             if(bestDist<(float)bestDist2*mfNNratio)
             {
                 // 如果找到的候选特征点对应F1中特征点已经匹配过了，说明发生了重复匹配，将原来的匹配也删掉
-                if(vnMatches21[bestIdx2]>=0)
+                if(vnMatches21[bestIdx2]>=0)// 按照下一行代码的写法，这行代码中应该存储的是对应的F1的特征点的序列
                 {
                     vnMatches12[vnMatches21[bestIdx2]]=-1;
                     nmatches--;
                 }
                 // 次优的匹配关系，双向建立
+                // Trista:个人认为是最优的匹配关系
                 // vnMatches12保存参考帧F1和F2匹配关系，index保存是F1对应特征点索引，值保存的是匹配好的F2特征点索引
                 vnMatches12[i1]=bestIdx2;
                 vnMatches21[bestIdx2]=i1;
@@ -668,11 +672,11 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
                         rot+=360.0f;
                     // 前面factor = HISTO_LENGTH/360.0f 
                     // bin = rot / 360.of * HISTO_LENGTH 表示当前rot被分配在第几个直方图bin  
-                    int bin = round(rot*factor);
+                    int bin = round(rot*factor);// round代表的是四舍五入
                     // 如果bin 满了又是一个轮回
                     if(bin==HISTO_LENGTH)
                         bin=0;
-                    assert(bin>=0 && bin<HISTO_LENGTH);
+                    assert(bin>=0 && bin<HISTO_LENGTH);//如果条件错误就向stderr打印一条出错信息，然后通过abort来终止程序运行
                     rotHist[bin].push_back(i1);
                 }
             }
@@ -697,9 +701,9 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
             for(size_t j=0, jend=rotHist[i].size(); j<jend; j++)
             {
                 int idx1 = rotHist[i][j];
-                if(vnMatches12[idx1]>=0)
+                if(vnMatches12[idx1]>=0)//保存参考帧F1中特征点是否匹配上，index保存是F1对应特征点索引，值保存的是匹配好的F2特征点索引
                 {
-                    vnMatches12[idx1]=-1;
+                    vnMatches12[idx1]=-1;//删除掉不在前三的匹配对
                     nmatches--;
                 }
             }
@@ -711,8 +715,7 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
     // Step 7 将最后通过筛选的匹配好的特征点保存到vbPrevMatched
     for(size_t i1=0, iend1=vnMatches12.size(); i1<iend1; i1++)
         if(vnMatches12[i1]>=0)
-            vbPrevMatched[i1]=F2.mvKeysUn[vnMatches12[i1]].pt;
-
+            vbPrevMatched[i1]=F2.mvKeysUn[vnMatches12[i1]].pt;// 本来存储的是参考帧的所有特征点坐标，该函数更新为匹配好的当前帧的特征点坐标
     return nmatches;
 }
 
@@ -741,7 +744,7 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
 
     // 保存匹配结果
     vpMatches12 = vector<MapPoint*>(vpMapPoints1.size(),static_cast<MapPoint*>(NULL));
-    vector<bool> vbMatched2(vpMapPoints2.size(),false);
+    vector<bool> vbMatched2(vpMapPoints2.size(),false);// 匹配成功的标志位
 
     // Step 2 构建旋转直方图，HISTO_LENGTH = 30
     vector<int> rotHist[HISTO_LENGTH];
@@ -752,49 +755,50 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
     const float factor = HISTO_LENGTH/360.0f;
 
     int nmatches = 0;
-
-    DBoW2::FeatureVector::const_iterator f1it = vFeatVec1.begin();
-    DBoW2::FeatureVector::const_iterator f2it = vFeatVec2.begin();
-    DBoW2::FeatureVector::const_iterator f1end = vFeatVec1.end();
-    DBoW2::FeatureVector::const_iterator f2end = vFeatVec2.end();
+    
+    // 怎样去理解特征向量FeatureVector？内部其实是个std::map<NodeId,std::vector<unsigned int>>
+    DBoW2::FeatureVector::const_iterator f1it = vFeatVec1.begin();// KeyFrame1中的Bow迭代器-初始
+    DBoW2::FeatureVector::const_iterator f2it = vFeatVec2.begin();// KeyFrame2中的Bow迭代器-初始
+    DBoW2::FeatureVector::const_iterator f1end = vFeatVec1.end(); // KeyFrame1中的Bow迭代器-结束
+    DBoW2::FeatureVector::const_iterator f2end = vFeatVec2.end(); // KeyFrame2中的Bow迭代器-结束
 
     while(f1it != f1end && f2it != f2end)
     {
         // Step 3 开始遍历，分别取出属于同一node的特征点(只有属于同一node，才有可能是匹配点)
         if(f1it->first == f2it->first)
         {
-            // 遍历KF中属于该node的特征点
+            // 遍历KF1中属于该node的特征点
             for(size_t i1=0, iend1=f1it->second.size(); i1<iend1; i1++)
             {
-                const size_t idx1 = f1it->second[i1];
+                const size_t idx1 = f1it->second[i1];//KeyFrame1中的地图点序号索引
 
-                MapPoint* pMP1 = vpMapPoints1[idx1];
+                MapPoint* pMP1 = vpMapPoints1[idx1];//PKF1的关键帧的地图点
                 if(!pMP1)
                     continue;
                 if(pMP1->isBad())
                     continue;
 
-                const cv::Mat &d1 = Descriptors1.row(idx1);
+                const cv::Mat &d1 = Descriptors1.row(idx1);//关键帧KF1中idx1的特征点的描述子
 
-                int bestDist1=256;
-                int bestIdx2 =-1 ;
-                int bestDist2=256;
+                int bestDist1=256;// 最匹配的距离，越小越好 ??为什么初始值是256
+                int bestIdx2 =-1 ;// 最佳匹配点的索引
+                int bestDist2=256;// 次佳匹配的距离
 
                 // Step 4 遍历KF2中属于该node的特征点，找到了最优及次优匹配点
                 for(size_t i2=0, iend2=f2it->second.size(); i2<iend2; i2++)
                 {
-                    const size_t idx2 = f2it->second[i2];
+                    const size_t idx2 = f2it->second[i2];// KeyFrame2中的地图点序号索引
 
-                    MapPoint* pMP2 = vpMapPoints2[idx2];
+                    MapPoint* pMP2 = vpMapPoints2[idx2];// PKF2的关键帧的地图点
 
                     // 如果已经有匹配的点，或者遍历到的特征点对应的地图点无效
                     if(vbMatched2[idx2] || !pMP2)
                         continue;
 
-                    if(pMP2->isBad())
+                    if(pMP2->isBad())//遍历到的特征点对应的地图点是坏点
                         continue;
 
-                    const cv::Mat &d2 = Descriptors2.row(idx2);
+                    const cv::Mat &d2 = Descriptors2.row(idx2);//关键帧KF2中idx2的特征点的描述子
 
                     int dist = DescriptorDistance(d1,d2);
 
@@ -815,15 +819,16 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
                 {
                     if(static_cast<float>(bestDist1)<mfNNratio*static_cast<float>(bestDist2))
                     {
-                        vpMatches12[idx1]=vpMapPoints2[bestIdx2];
-                        vbMatched2[bestIdx2]=true;
+                        //– pKF2中与pKF1匹配的MapPoint，vpMatches12[i]表示匹配的地图点，null表示没有匹配，i表示匹配的pKF1 特征点索引
+                        vpMatches12[idx1]=vpMapPoints2[bestIdx2];//最佳匹配点对应的地图点
+                        vbMatched2[bestIdx2]=true;//更新最佳匹配点索引的标志位
 
                         if(mbCheckOrientation)
                         {
                             float rot = vKeysUn1[idx1].angle-vKeysUn2[bestIdx2].angle;
                             if(rot<0.0)
                                 rot+=360.0f;
-                            int bin = round(rot*factor);
+                            int bin = round(rot*factor);//round四舍五入
                             if(bin==HISTO_LENGTH)
                                 bin=0;
                             assert(bin>=0 && bin<HISTO_LENGTH);
@@ -839,11 +844,11 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
         }
         else if(f1it->first < f2it->first)
         {
-            f1it = vFeatVec1.lower_bound(f2it->first);
+            f1it = vFeatVec1.lower_bound(f2it->first);//对齐，其实就在指定区域内查找不小于目标值f2it->first的第一个元素
         }
         else
         {
-            f2it = vFeatVec2.lower_bound(f1it->first);
+            f2it = vFeatVec2.lower_bound(f1it->first);//对齐，其实就在指定区域内查找不小于目标值f1it->first的第一个元素
         }
     }
 
@@ -884,11 +889,12 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
 int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F12,
                                        vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo)
 {
-    const DBoW2::FeatureVector &vFeatVec1 = pKF1->mFeatVec;
-    const DBoW2::FeatureVector &vFeatVec2 = pKF2->mFeatVec;
+    const DBoW2::FeatureVector &vFeatVec1 = pKF1->mFeatVec;//关键帧1中的BoW向量
+    const DBoW2::FeatureVector &vFeatVec2 = pKF2->mFeatVec;//关键帧2中的BoW向量
 
     // Compute epipole in second image
     // Step 1 计算KF1的相机中心在KF2图像平面的二维像素坐标
+
     // KF1相机光心在世界坐标系坐标Cw
     cv::Mat Cw = pKF1->GetCameraCenter(); 
     // KF2相机位姿R2w,t2w,是世界坐标系到相机坐标系
@@ -906,8 +912,8 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
     // Compare only ORB that share the same node
 
     int nmatches=0;
-    // 记录匹配是否成功，避免重复匹配
-    vector<bool> vbMatched2(pKF2->N,false);        
+    
+    vector<bool> vbMatched2(pKF2->N,false);      // 记录匹配是否成功，避免重复匹配(类似于标志位)  
     vector<int> vMatches12(pKF1->N,-1);
     // 用于统计匹配点对旋转差的直方图
     vector<int> rotHist[HISTO_LENGTH];
@@ -919,13 +925,15 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
 
     // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
     // Step 2 利用BoW加速匹配：只对属于同一节点(特定层)的ORB特征进行匹配
+
+    // 怎样去理解特征向量FeatureVector？内部其实是个std::map<NodeId,std::vector<unsigned int>>
     // FeatureVector其实就是一个map类，那就可以直接获取它的迭代器进行遍历
     // FeatureVector的数据结构类似于：{(node1,feature_vector1) (node2,feature_vector2)...}
     // f1it->first对应node编号，f1it->second对应属于该node的所有特特征点编号
-    DBoW2::FeatureVector::const_iterator f1it = vFeatVec1.begin();
-    DBoW2::FeatureVector::const_iterator f2it = vFeatVec2.begin();
-    DBoW2::FeatureVector::const_iterator f1end = vFeatVec1.end();
-    DBoW2::FeatureVector::const_iterator f2end = vFeatVec2.end();
+    DBoW2::FeatureVector::const_iterator f1it = vFeatVec1.begin();  // KeyFrame1中的Bow迭代器-初始
+    DBoW2::FeatureVector::const_iterator f2it = vFeatVec2.begin();  // KeyFrame2中的Bow迭代器-初始
+    DBoW2::FeatureVector::const_iterator f1end = vFeatVec1.end();   // KeyFrame1中的Bow迭代器-结束
+    DBoW2::FeatureVector::const_iterator f2end = vFeatVec2.end();   // KeyFrame2中的Bow迭代器-结束
 
     // Step 2.1：遍历pKF1和pKF2中的node节点
     while(f1it!=f1end && f2it!=f2end)
@@ -933,19 +941,21 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
         // 如果f1it和f2it属于同一个node节点才会进行匹配，这就是BoW加速匹配原理
         if(f1it->first == f2it->first)
         {
-            // Step 2.2：遍历属于同一node节点(id：f1it->first)下的所有特征点
+            // Step 2.2：遍历属于同一node节点(node_id：f1it->first)下的所有特征点
             for(size_t i1=0, iend1=f1it->second.size(); i1<iend1; i1++)
             {
                 // 获取pKF1中属于该node节点的所有特征点索引
                 const size_t idx1 = f1it->second[i1];
                 
-                // Step 2.3：通过特征点索引idx1在pKF1中取出对应的MapPoint
+                // Step 2.3：通过特征点索引idx1在pKF1中取出该特征点对应的MapPoint
                 MapPoint* pMP1 = pKF1->GetMapPoint(idx1);
                 
                 // If there is already a MapPoint skip
-                // 由于寻找的是未匹配的特征点，所以pMP1应该为NULL
+                // 由于寻找的是未匹配的特征点，所以pMP1应该为NULL,因此不执行这一步，不会跳出该循环，这只是一个保险栓
                 if(pMP1)
                     continue;
+                    // 这里补充一下，continue:即跳过循环体中下面尚未执行的语句，接着进行下一次是否执行循环的判定
+                    // break:其作用为使流程从循环体内跳出循环体，即提前结束循环，接着执行循环体下面的语句
 
                 // 如果mvuRight中的值大于0，表示是双目，且该特征点有深度值
                 const bool bStereo1 = pKF1->mvuRight[idx1]>=0;
@@ -979,7 +989,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
 
                     const bool bStereo2 = pKF2->mvuRight[idx2]>=0;
 
-                    if(bOnlyStereo)
+                    if(bOnlyStereo)//双目
                         if(!bStereo2)
                             continue;
                     
@@ -1001,7 +1011,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                     {
                         const float distex = ex-kp2.pt.x;
                         const float distey = ey-kp2.pt.y;
-                        // Step 2.7 极点e2到kp2的像素距离如果小于阈值th,认为kp2对应的MapPoint距离pKF1相机太近，跳过该匹配点对
+                        // Step 2.7 极点e2到kp2的像素距离如果小于阈值th,认为kp2对应的MapPoint距离pKF1相机太近，跳过该匹配点对 ？？？为什么太近
                         // 作者根据kp2金字塔尺度因子(scale^n，scale=1.2，n为层数)定义阈值th
                         // 金字塔层数从0到7，对应距离 sqrt(100*pKF2->mvScaleFactors[kp2.octave]) 是10-20个像素
                         //? 对这个阈值的有效性持怀疑态度
@@ -1110,17 +1120,19 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
     cv::Mat Rcw = pKF->GetRotation();
     cv::Mat tcw = pKF->GetTranslation();
 
+    // 内参
     const float &fx = pKF->fx;
     const float &fy = pKF->fy;
     const float &cx = pKF->cx;
     const float &cy = pKF->cy;
-    const float &bf = pKF->mbf;
+    const float &bf = pKF->mbf;//光心在世界坐标系下坐标
 
+    // 光心在世界坐标系下坐标
     cv::Mat Ow = pKF->GetCameraCenter();
 
     int nFused=0;
 
-    const int nMPs = vpMapPoints.size();
+    const int nMPs = vpMapPoints.size();// 待投影的地图点的数量
 
     // 遍历所有的待投影地图点
     for(int i=0; i<nMPs; i++)
@@ -1156,12 +1168,12 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
         if(!pKF->IsInImage(u,v))
             continue;
 
-        const float ur = u-bf*invz;
+        const float ur = u-bf*invz;//光心坐标的归一化???
 
         const float maxDistance = pMP->GetMaxDistanceInvariance();
         const float minDistance = pMP->GetMinDistanceInvariance();
-        cv::Mat PO = p3Dw-Ow;
-        const float dist3D = cv::norm(PO);
+        cv::Mat PO = p3Dw-Ow;//待投影地图点到光心的距离
+        const float dist3D = cv::norm(PO);//其实是P和O点之间的距离，大于或等于0
 
         // Depth must be inside the scale pyramid of the image
         // Step 3 地图点到关键帧相机光心距离需满足在有效范围内
@@ -1186,7 +1198,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
             continue;
 
         // Match to the most similar keypoint in the radius
-         // Step 6 遍历寻找最佳匹配点
+        // Step 6 遍历寻找最佳匹配点
         const cv::Mat dMP = pMP->GetDescriptor();
 
         int bestDist = 256;
@@ -1202,7 +1214,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
             if(kpLevel<nPredictedLevel-1 || kpLevel>nPredictedLevel)
                 continue;
 
-            // 计算投影点与候选匹配特征点的距离，如果偏差很大，直接跳过
+            // 计算投影点与候选匹配特征点的距离，如果偏差很大，直接跳过 ???
             if(pKF->mvuRight[idx]>=0)
             {
                 // Check reprojection error in stereo
@@ -1442,7 +1454,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
                              const float &s12, const cv::Mat &R12, const cv::Mat &t12, const float th)
 {
     // Step 1： 准备工作：内参，计算Sim3的逆
-    const float &fx = pKF1->fx;
+    const float &fx = pKF1->fx;// 焦距？？
     const float &fy = pKF1->fy;
     const float &cx = pKF1->cx;
     const float &cy = pKF1->cy;
@@ -1461,23 +1473,23 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     // Sim3 的逆
     cv::Mat sR12 = s12*R12;
     cv::Mat sR21 = (1.0/s12)*R12.t();
-    cv::Mat t21 = -sR21*t12;
+    cv::Mat t21 = -sR21*t12;// 逆变换矩阵
 
     // 取出关键帧中的地图点
-    const vector<MapPoint*> vpMapPoints1 = pKF1->GetMapPointMatches();
+    const vector<MapPoint*> vpMapPoints1 = pKF1->GetMapPointMatches();// pKF1当前帧获取该关键帧的MapPoints
     const int N1 = vpMapPoints1.size();
 
-    const vector<MapPoint*> vpMapPoints2 = pKF2->GetMapPointMatches();
-    const int N2 = vpMapPoints2.size();
+    const vector<MapPoint*> vpMapPoints2 = pKF2->GetMapPointMatches();// pKF2闭环候选帧获取该关键帧的MapPoints
+    const int N2 = vpMapPoints2.size();// pKF2闭环候选帧获取该关键帧的MapPoints的个数
 
-    // 记录pKF1，pKF2中已经匹配的特征点，已经匹配记为true，否则false
-    vector<bool> vbAlreadyMatched1(N1,false);
-    vector<bool> vbAlreadyMatched2(N2,false);
+    // 记录pKF1，pKF2中已经匹配的特征点，已经匹配记为true，否则false-;类似于标志位
+    vector<bool> vbAlreadyMatched1(N1,false);// 记录pKF1中已经匹配的特征点，已经匹配记为true，否则false
+    vector<bool> vbAlreadyMatched2(N2,false);// 记录pKF2中已经匹配的特征点，已经匹配记为true，否则false
 
     // Step 2：记录已经匹配的特征点
     for(int i=0; i<N1; i++)
     {
-        MapPoint* pMP = vpMatches12[i];
+        MapPoint* pMP = vpMatches12[i];// i表示匹配的pKF1 特征点索引，vpMatches12[i]表示匹配的地图点，null表示没有匹配
         if(pMP)
         {
             // pKF1中第i个特征点已经匹配成功
@@ -1490,7 +1502,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         }
     }
 
-    vector<int> vnMatch1(N1,-1);
+    vector<int> vnMatch1(N1,-1);//存放最有匹配的idx
     vector<int> vnMatch2(N2,-1);
 
     // Transform from KF1 to KF2 and search
@@ -1531,9 +1543,9 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         if(!pKF2->IsInImage(u,v))
             continue;
 
-        const float maxDistance = pMP->GetMaxDistanceInvariance();
-        const float minDistance = pMP->GetMinDistanceInvariance();
-        const float dist3D = cv::norm(p3Dc2);
+        const float maxDistance = pMP->GetMaxDistanceInvariance();// 当前帧的最大距离
+        const float minDistance = pMP->GetMinDistanceInvariance();// 当前帧的最小距离
+        const float dist3D = cv::norm(p3Dc2);//???范数
 
         // Depth must be inside the scale invariance region
         // 深度值在有效范围内
@@ -1557,23 +1569,23 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         // Match to the most similar keypoint in the radius
         const cv::Mat dMP = pMP->GetDescriptor();
 
-        int bestDist = INT_MAX;
+        int bestDist = INT_MAX;// 最佳匹配距离：该值越小越好
         int bestIdx = -1;
         // Step 3.4：遍历所有候选特征点，寻找最佳匹配点（并未使用次佳最佳比例约束）
         for(vector<size_t>::const_iterator vit=vIndices.begin(), vend=vIndices.end(); vit!=vend; vit++)
         {
             const size_t idx = *vit;
 
-            const cv::KeyPoint &kp = pKF2->mvKeysUn[idx];
+            const cv::KeyPoint &kp = pKF2->mvKeysUn[idx];//闭环候选帧的特征点的序列
 
             if(kp.octave<nPredictedLevel-1 || kp.octave>nPredictedLevel)
                 continue;
 
-            const cv::Mat &dKF = pKF2->mDescriptors.row(idx);
+            const cv::Mat &dKF = pKF2->mDescriptors.row(idx);//闭环候选帧的特征点的描述子
 
-            const int dist = DescriptorDistance(dMP,dKF);
+            const int dist = DescriptorDistance(dMP,dKF);//计算两个描述子的汉明距离
 
-            if(dist<bestDist)
+            if(dist<bestDist)//更新最佳匹配距离和最佳匹配序列
             {
                 bestDist = dist;
                 bestIdx = idx;
@@ -1582,16 +1594,16 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
 
         if(bestDist<=TH_HIGH)
         {
-            vnMatch1[i1]=bestIdx;
+            vnMatch1[i1]=bestIdx;//如果最佳匹配点满足阈值条件，就将最佳匹配点的序列放置在vnMatch1的vec中
         }
     }
 
     // Transform from KF2 to KF1 and search
-    // Step 4：通过Sim变换，寻找 pKF2 中特征点和 pKF1 中的新的匹配
+    // Step 4：通过Sim变换，寻找 pKF2闭环候选帧 中特征点和 pKF1当前帧 中遗漏的新的匹配
     // 具体步骤同上
     for(int i2=0; i2<N2; i2++)
     {
-        MapPoint* pMP = vpMapPoints2[i2];
+        MapPoint* pMP = vpMapPoints2[i2];// 遍历到的当前的闭环候选帧
 
         if(!pMP || vbAlreadyMatched2[i2])
             continue;
@@ -1599,18 +1611,20 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         if(pMP->isBad())
             continue;
 
-        cv::Mat p3Dw = pMP->GetWorldPos();
-        cv::Mat p3Dc2 = R2w*p3Dw + t2w;
-        cv::Mat p3Dc1 = sR12*p3Dc2 + t12;
+        cv::Mat p3Dw = pMP->GetWorldPos();  //遍历到的当前闭环候选帧地图点的世界坐标系下的位置
+        cv::Mat p3Dc2 = R2w*p3Dw + t2w;     //遍历到的当前闭环候选帧，从世界坐标系转换到相机坐标系下
+        cv::Mat p3Dc1 = sR12*p3Dc2 + t12;   //逆变换矩阵，将pkf2中的地图点投影到pkf1中的图像坐标
 
-        // Depth must be positive
+        // Depth must be positive深度必须是正数或者为0
         if(p3Dc1.at<float>(2)<0.0)
             continue;
 
+        //坐标归一下
         const float invz = 1.0/p3Dc1.at<float>(2);
         const float x = p3Dc1.at<float>(0)*invz;
         const float y = p3Dc1.at<float>(1)*invz;
 
+        //投影为像素坐标系
         const float u = fx*x+cx;
         const float v = fy*y+cy;
 
@@ -1626,18 +1640,19 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         if(dist3D<minDistance || dist3D>maxDistance)
             continue;
 
-        // Compute predicted octave
+        // Compute predicted octave 预测投影的点在图像金字塔的哪一层
         const int nPredictedLevel = pMP->PredictScale(dist3D,pKF1);
 
-        // Search in a radius of 2.5*sigma(ScaleLevel)
+        // Search in a radius of 2.5*sigma(ScaleLevel)同时计算pkf1中的特征点搜索半径
         const float radius = th*pKF1->mvScaleFactors[nPredictedLevel];
 
+        //当前帧在这个邻域内找到的特征点索引的集合的个数
         const vector<size_t> vIndices = pKF1->GetFeaturesInArea(u,v,radius);
 
         if(vIndices.empty())
             continue;
 
-        // Match to the most similar keypoint in the radius
+        // Match to the most similar keypoint in the radius闭环候选帧的描述子
         const cv::Mat dMP = pMP->GetDescriptor();
 
         int bestDist = INT_MAX;
@@ -1651,11 +1666,11 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
             if(kp.octave<nPredictedLevel-1 || kp.octave>nPredictedLevel)
                 continue;
 
-            const cv::Mat &dKF = pKF1->mDescriptors.row(idx);
+            const cv::Mat &dKF = pKF1->mDescriptors.row(idx);//当前帧的描述子
 
-            const int dist = DescriptorDistance(dMP,dKF);
+            const int dist = DescriptorDistance(dMP,dKF);//计算当前帧和闭环候选帧的描述子的汉明距离
 
-            if(dist<bestDist)
+            if(dist<bestDist)//更新最佳匹配距离
             {
                 bestDist = dist;
                 bestIdx = idx;
@@ -1664,7 +1679,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
 
         if(bestDist<=TH_HIGH)
         {
-            vnMatch2[i2]=bestIdx;
+            vnMatch2[i2]=bestIdx;//更新最有匹配的序列号
         }
     }
 
@@ -1716,54 +1731,70 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
     vector<int> rotHist[HISTO_LENGTH];
     for(int i=0;i<HISTO_LENGTH;i++)
         rotHist[i].reserve(500);
+    /* PS:注意此处为什么是使用reserve而不是resize?
+     * 原因： reserve是容器预留空间，但在空间内不真正创建元素对象，所以在没有添加新的对象之前，不能引用容器内的元素
+     * 表现：1） myVec.reserve( 100 );     // 新元素还没有构造, 此时不能用[]访问元素
+     *       for (int i = 0; i < 100; i++ )
+     *      {
+     *          myVec.push_back( i ); //新元素这时才构造
+     *      }
+     * 
+     *      2）myVec.resize( 102 );      // 用元素的默认构造函数构造了两个新的元素
+     *         myVec[100] = 1;           //直接操作新元素
+     * 
+     */
 
     //! 原作者代码是 const float factor = 1.0f/HISTO_LENGTH; 是错误的，更改为下面代码
-    const float factor = HISTO_LENGTH/360.0f;
+    const float factor = HISTO_LENGTH/360.0f;//???此处是什么意思？？？factor ：1角度代表的直方图高度
 
     // Step 2 计算当前帧和前一帧的平移向量
-    //当前帧的相机位姿
-    const cv::Mat Rcw = CurrentFrame.mTcw.rowRange(0,3).colRange(0,3);
-    const cv::Mat tcw = CurrentFrame.mTcw.rowRange(0,3).col(3);
+    // 当前帧的相机位姿 R:rotation c:current w：world
+    const cv::Mat Rcw = CurrentFrame.mTcw.rowRange(0,3).colRange(0,3);// 当前帧的旋转矩阵
+    const cv::Mat tcw = CurrentFrame.mTcw.rowRange(0,3).col(3); // 当前帧的平移矩阵
 
-    //当前相机坐标系到世界坐标系的平移向量
-    const cv::Mat twc = -Rcw.t()*tcw; 
+    // 当前相机坐标系到世界坐标系的平移向量???
+    const cv::Mat twc = -Rcw.t()*tcw; //.t()代表的转置
 
-    //上一帧的相机位姿
+    // 上一帧的相机位姿 R:rotation l:lastframe w:world
     const cv::Mat Rlw = LastFrame.mTcw.rowRange(0,3).colRange(0,3);
     const cv::Mat tlw = LastFrame.mTcw.rowRange(0,3).col(3); // tlw(l)
 
     // vector from LastFrame to CurrentFrame expressed in LastFrame
     // 当前帧相对于上一帧相机的平移向量
-    const cv::Mat tlc = Rlw*twc+tlw; 
+    // Trista: 当前帧的坐标系原点相对于上一帧的坐标系原点的平移向量，本向量不仅包含平移，还包括过程中的旋转
+    const cv::Mat tlc = Rlw*twc+tlw; //??? Trista个人理解：，应该是从当前帧变换到上一帧的坐标变换
 
-    // 判断前进还是后退
+    // 判断前进还是后退；此处基线相当于阈值，如果tlc>0代表向前进，tlc<0代表向后运动
     const bool bForward = tlc.at<float>(2) > CurrentFrame.mb && !bMono;     // 非单目情况，如果Z大于基线，则表示相机明显前进
-    const bool bBackward = -tlc.at<float>(2) > CurrentFrame.mb && !bMono;   // 非单目情况，如果-Z小于基线，则表示相机明显后退
+    const bool bBackward = -tlc.at<float>(2) > CurrentFrame.mb && !bMono;   // 非单目情况，如果-Z小于基线，则表示相机明显后退 
 
     //  Step 3 对于前一帧的每一个地图点，通过相机投影模型，得到投影到当前帧的像素坐标
     for(int i=0; i<LastFrame.N; i++)
     {
-        MapPoint* pMP = LastFrame.mvpMapPoints[i];
+        MapPoint* pMP = LastFrame.mvpMapPoints[i];//上一帧特征点对应的地图点
 
         if(pMP)
         {
             if(!LastFrame.mvbOutlier[i])
             {
                 // 对上一帧有效的MapPoints投影到当前帧坐标系
-                cv::Mat x3Dw = pMP->GetWorldPos();
-                cv::Mat x3Dc = Rcw*x3Dw+tcw;
+                cv::Mat x3Dw = pMP->GetWorldPos();//获取上一帧地图点的世界坐标
+                cv::Mat x3Dc = Rcw*x3Dw+tcw;//上一帧有效的地图点在当前帧的相机坐标系下的坐标
 
+                // 上一帧有效的地图点在当前帧的世界坐标系下的3D坐标
                 const float xc = x3Dc.at<float>(0);
                 const float yc = x3Dc.at<float>(1);
-                const float invzc = 1.0/x3Dc.at<float>(2);
+                const float invzc = 1.0/x3Dc.at<float>(2);// 1/z 坐标深度的倒数，方便后面投影到当前帧的计算
 
+                // 深度不合理
                 if(invzc<0)
                     continue;
 
-                // 投影到当前帧中
+                // 投影到当前帧中，利用当前帧的位姿将其投影到当前帧
                 float u = CurrentFrame.fx*xc*invzc+CurrentFrame.cx;
                 float v = CurrentFrame.fy*yc*invzc+CurrentFrame.cy;
 
+                // 投影坐标应该符合当前帧的限值标准
                 if(u<CurrentFrame.mnMinX || u>CurrentFrame.mnMaxX)
                     continue;
                 if(v<CurrentFrame.mnMinY || v>CurrentFrame.mnMaxY)
@@ -1774,7 +1805,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
 
                 // Search in a window. Size depends on scale
                 // 单目：th = 7，双目：th = 15
-                float radius = th*CurrentFrame.mvScaleFactors[nLastOctave]; // 尺度越大，搜索范围越大
+                float radius = th*CurrentFrame.mvScaleFactors[nLastOctave]; // 金字塔层数越高，尺度越大，搜索范围越大
 
                 // 记录候选匹配点的id
                 vector<size_t> vIndices2;         
@@ -1784,7 +1815,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                 // 当相机前进时，圆点的面积增大，在某个尺度m下它是一个特征点，由于面积增大，则需要在更高的尺度下才能检测出来
                 // 当相机后退时，圆点的面积减小，在某个尺度m下它是一个特征点，由于面积减小，则需要在更低的尺度下才能检测出来
                 if(bForward) // 前进,则上一帧兴趣点在所在的尺度nLastOctave<=nCurOctave
-                    vIndices2 = CurrentFrame.GetFeaturesInArea(u,v, radius, nLastOctave);
+                    vIndices2 = CurrentFrame.GetFeaturesInArea(u,v, radius, nLastOctave);//头文件里面有默认值
                 else if(bBackward) // 后退,则上一帧兴趣点在所在的尺度0<=nCurOctave<=nLastOctave
                     vIndices2 = CurrentFrame.GetFeaturesInArea(u,v, radius, 0, nLastOctave);
                 else // 在[nLastOctave-1, nLastOctave+1]中搜索
@@ -1793,7 +1824,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                 if(vIndices2.empty())
                     continue;
 
-                const cv::Mat dMP = pMP->GetDescriptor();
+                const cv::Mat dMP = pMP->GetDescriptor();//上一帧特征点对应的地图点的描述子
 
                 int bestDist = 256;
                 int bestIdx2 = -1;
@@ -1801,7 +1832,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                 // Step 5 遍历候选匹配点，寻找距离最小的最佳匹配点 
                 for(vector<size_t>::const_iterator vit=vIndices2.begin(), vend=vIndices2.end(); vit!=vend; vit++)
                 {
-                    const size_t i2 = *vit;
+                    const size_t i2 = *vit;//？？？不理解为什么要这样c++用法吗
 
                     // 如果该特征点已经有对应的MapPoint了,则退出该次循环
                     if(CurrentFrame.mvpMapPoints[i2])
@@ -1817,7 +1848,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
                             continue;
                     }
 
-                    const cv::Mat &d = CurrentFrame.mDescriptors.row(i2);
+                    const cv::Mat &d = CurrentFrame.mDescriptors.row(i2);//当前帧特征点对应的地图点的描述子
 
                     const int dist = DescriptorDistance(dMP,d);
 
@@ -1891,7 +1922,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
 int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set<MapPoint*> &sAlreadyFound, const float th , const int ORBdist)
 {
     int nmatches = 0;
-
+    //计算当前帧的相机位姿  
     const cv::Mat Rcw = CurrentFrame.mTcw.rowRange(0,3).colRange(0,3);
     const cv::Mat tcw = CurrentFrame.mTcw.rowRange(0,3).col(3);
     const cv::Mat Ow = -Rcw.t()*tcw;
@@ -1903,12 +1934,12 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
         rotHist[i].reserve(500);
     const float factor = HISTO_LENGTH/360.0f;
 
-    const vector<MapPoint*> vpMPs = pKF->GetMapPointMatches();
+    const vector<MapPoint*> vpMPs = pKF->GetMapPointMatches();//获取该关键帧的地图点
 
     // Step 2 遍历关键帧中的每个地图点，通过相机投影模型，得到投影到当前帧的像素坐标
     for(size_t i=0, iend=vpMPs.size(); i<iend; i++)
     {
-        MapPoint* pMP = vpMPs[i];
+        MapPoint* pMP = vpMPs[i];//遍历到的当前关键帧的地图点
 
         if(pMP)
         {
@@ -1916,13 +1947,14 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
             if(!pMP->isBad() && !sAlreadyFound.count(pMP))
             {
                 //Project
-                cv::Mat x3Dw = pMP->GetWorldPos();
-                cv::Mat x3Dc = Rcw*x3Dw+tcw;
+                cv::Mat x3Dw = pMP->GetWorldPos();//获取当前地图点在世界坐标系下的位置
+                cv::Mat x3Dc = Rcw*x3Dw+tcw;//世界坐标系转换到相机坐标系下
 
                 const float xc = x3Dc.at<float>(0);
                 const float yc = x3Dc.at<float>(1);
                 const float invzc = 1.0/x3Dc.at<float>(2);
 
+                // 通过投影关系将关键帧的地图点，通过相机投影模型，投影到当前帧的像素坐标下
                 const float u = CurrentFrame.fx*xc*invzc+CurrentFrame.cx;
                 const float v = CurrentFrame.fy*yc*invzc+CurrentFrame.cy;
 
@@ -1931,12 +1963,12 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
                 if(v<CurrentFrame.mnMinY || v>CurrentFrame.mnMaxY)
                     continue;
 
-                // Compute predicted scale level
+                // Compute predicted scale level ???不明白是什么意思
                 cv::Mat PO = x3Dw-Ow;
-                float dist3D = cv::norm(PO);
+                float dist3D = cv::norm(PO);//深度
 
-                const float maxDistance = pMP->GetMaxDistanceInvariance();
-                const float minDistance = pMP->GetMinDistanceInvariance();
+                const float maxDistance = pMP->GetMaxDistanceInvariance();//获得当前关键帧的地图点的最大距离
+                const float minDistance = pMP->GetMinDistanceInvariance();//获得当前关键帧的地图点的最小距离
 
                 // Depth must be inside the scale pyramid of the image
                 if(dist3D<minDistance || dist3D>maxDistance)
@@ -1950,11 +1982,11 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
 
                 //  Step 3 搜索候选匹配点
                 const vector<size_t> vIndices2 = CurrentFrame.GetFeaturesInArea(u, v, radius, nPredictedLevel-1, nPredictedLevel+1);
-
+                // 找到在 以x,y为中心,半径为r的圆形内且金字塔层级在[minLevel, maxLevel]的特征点
                 if(vIndices2.empty())
                     continue;
 
-                const cv::Mat dMP = pMP->GetDescriptor();
+                const cv::Mat dMP = pMP->GetDescriptor();//获取当前关键帧的地图点的描述子
 
                 int bestDist = 256;
                 int bestIdx2 = -1;
@@ -1965,7 +1997,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
                     if(CurrentFrame.mvpMapPoints[i2])
                         continue;
 
-                    const cv::Mat &d = CurrentFrame.mDescriptors.row(i2);
+                    const cv::Mat &d = CurrentFrame.mDescriptors.row(i2);//当前地图点的描述子
 
                     const int dist = DescriptorDistance(dMP,d);
 
@@ -2077,26 +2109,30 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
 }
 
 
-// Bit set count operation from
+// Bit set count operation from ??? dont know why
 // Hamming distance：两个二进制串之间的汉明距离，指的是其不同位数的个数
 // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
 int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
 {
-    const int *pa = a.ptr<int32_t>();
-    const int *pb = b.ptr<int32_t>();
+    const int *pa = a.ptr<int32_t>();//!!!const在前，表示指向的东西是常量，const在后表示的是常量指针
+    const int *pb = b.ptr<int32_t>();//!!!const在前，表示指向的东西是常量，const在后表示的是常量指针
 
     int dist=0;
 
-    // 8*32=256bit
-
+    // 8*32=256bit--int32_t = 4byte，1byte= 8bit
     for(int i=0; i<8; i++, pa++, pb++)
     {
-        unsigned  int v = *pa ^ *pb;        // 相等为0,不等为1
+        unsigned  int v = *pa ^ *pb;        // ^异或符号，相等为0,不等为1
         // 下面的操作就是计算其中bit为1的个数了,这个操作看上面的链接就好
         // 其实我觉得也还阔以直接使用8bit的查找表,然后做32次寻址操作就完成了;不过缺点是没有利用好CPU的字长
-        v = v - ((v >> 1) & 0x55555555);
-        v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-        dist += (((v + (v >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
+        // ((v >> 1) & 0x55555555)先右移一位，等于拿到奇数位
+        //>> 右移   & 0x55555555（01010101 01010101 01010101 01010101偶数位为0，奇数位为1）
+        v = v - ((v >> 1) & 0x55555555);// reuse input as temporary
+        //0x33333333 = 00110011 00110011 00110011 00110011 (1和0每隔两位交替出现)
+        v = (v & 0x33333333) + ((v >> 2) & 0x33333333);// temp
+        // 0x0F0F0F0F = 00001111 00001111 00001111 00001111
+        // 0x0F0F0F0F = 00001111 00001111 00001111 00001111
+        dist += (((v + (v >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;// count
     }
 
     return dist;

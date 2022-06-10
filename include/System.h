@@ -69,10 +69,10 @@ public:
 
     // Initialize the SLAM system. It launches the Local Mapping, Loop Closing and Viewer threads.
     //构造函数，用来初始化整个系统。
-    System(const string &strVocFile,            //指定ORB字典文件的路径
-           const string &strSettingsFile,       //指定配置文件的路径
-           const eSensor sensor,                //指定所使用的传感器类型
-           const bool bUseViewer = true);       //指定是否使用可视化界面 TODO 
+    System(const string &strVocFile,            // 指定ORB字典文件的路径
+           const string &strSettingsFile,       // 指定配置文件的路径
+           const eSensor sensor,                // 指定所使用的传感器类型
+           const bool bUseViewer = true);       // 指定是否使用可视化界面 TODO 
 
     //下面是针对三种不同类型的传感器所设计的三种运动追踪接口。彩色图像为CV_8UC3类型，并且都将会被转换成为灰度图像。
     //追踪接口返回估计的相机位姿，如果追踪失败则返回NULL
@@ -216,8 +216,8 @@ private:
     // Change mode flags
     //模式改变标志
     std::mutex mMutexMode;
-    bool mbActivateLocalizationMode;
-    bool mbDeactivateLocalizationMode;
+    bool mbActivateLocalizationMode;    // 激活定位模式???
+    bool mbDeactivateLocalizationMode;  // 取消定位模式???
 
     // Tracking state
     // 追踪状态标志，注意前三个的类型和上面的函数类型相互对应

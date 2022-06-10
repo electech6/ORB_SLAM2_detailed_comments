@@ -192,11 +192,11 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     // 注意这次里在每一次采样的过程中,需要采样四个点,即最小集应该设置为4
 
     // Step 1 获取给定的参数
-    mRansacProb = probability;
-    mRansacMinInliers = minInliers;
-    mRansacMaxIts = maxIterations;
-    mRansacEpsilon = epsilon;         
-    mRansacMinSet = minSet;           
+    mRansacProb = probability;      // 用于计算RANSAC理论迭代次数所用的概率
+    mRansacMinInliers = minInliers; // 退出RANSAC所需要的最小内点个数, 注意这个只是给定值,最终迭代的时候不一定按照这个来
+    mRansacMaxIts = maxIterations;  // 设定的最大RANSAC迭代次数
+    mRansacEpsilon = epsilon;       // 希望得到的 内点数/总体数 的比值,参与到最小内点数的确定过程中  
+    mRansacMinSet = minSet;         // 表示求解这个问题所需要的最小的样本数目,简称最小集;参与到最小内点数的确定过程中，默认是4 
 
 
     // Step 2 计算理论内点数,并且选 min(给定内点数,最小集,理论内点数) 作为最终在迭代过程中使用的最小内点数

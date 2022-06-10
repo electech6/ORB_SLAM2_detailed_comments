@@ -143,7 +143,7 @@ public:
     std::mutex mMutexPointCreation;
 
 protected:
-    // 存储所有的地图点
+    // 存储所有的地图点 set的键值就是实值
     std::set<MapPoint*> mspMapPoints; 
 
     // 存储所有的关键帧

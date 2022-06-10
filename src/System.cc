@@ -32,15 +32,15 @@ namespace ORB_SLAM2
 {
 
 //系统的构造函数，将会启动其他的线程
-System::System(const string &strVocFile,					//词典文件路径
-			   const string &strSettingsFile,				//配置文件路径
-			   const eSensor sensor,						//传感器类型
-               const bool bUseViewer):						//是否使用可视化界面
-					 mSensor(sensor), 							//初始化传感器类型
-					 mpViewer(static_cast<Viewer*>(NULL)),		//空。。。对象指针？  TODO 
-					 mbReset(false),							//无复位标志
-					 mbActivateLocalizationMode(false),			//没有这个模式转换标志
-        			 mbDeactivateLocalizationMode(false)		//没有这个模式转换标志
+System::System(const string &strVocFile,					// 指定ORB字典文件的路径
+			   const string &strSettingsFile,				// 指定配置文件的路径
+			   const eSensor sensor,						// 指定所使用的传感器类型
+               const bool bUseViewer):						// 是否使用可视化界面
+					 mSensor(sensor), 							/* 初始化传感器的类型 */
+					 mpViewer(static_cast<Viewer*>(NULL)),		/* 视图类 Viewer 的对象 */
+					 mbReset(false),							/* 复位标志 ，否 */
+					 mbActivateLocalizationMode(false),			/* 模式转换标志位 ，无 */
+        			 mbDeactivateLocalizationMode(false)		/* 模式转换标志位 ，无 */
 {
     // Output welcome message
     cout << endl <<
@@ -49,9 +49,9 @@ System::System(const string &strVocFile,					//词典文件路径
     "This is free software, and you are welcome to redistribute it" << endl <<
     "under certain conditions. See LICENSE.txt." << endl << endl;
 
-    // 输出当前传感器类型
-    cout << "Input sensor was set to: ";
 
+    /* 输出当前相机传感器类型 */
+    cout << "Input sensor was set to: ";
     if(mSensor==MONOCULAR)
         cout << "Monocular" << endl;
     else if(mSensor==STEREO)
@@ -59,10 +59,18 @@ System::System(const string &strVocFile,					//词典文件路径
     else if(mSensor==RGBD)
         cout << "RGB-D" << endl;
 
-    //Check settings file
-    cv::FileStorage fsSettings(strSettingsFile.c_str(), 	//将配置文件名转换成为字符串
-    						   cv::FileStorage::READ);		//只读
-    //如果打开失败，就输出调试信息
+
+    /* Check settings file读取相机配置文件路径：
+    * 补充：此处的fsSetting接口配置：
+    cv::FileStorage(const string& source, int flags， const string& encoding=string());
+    * 其中，
+    * source –存储或读取数据的文件名（字符串），其扩展名(.xml 或 .yml/.yaml)决定文件格式。
+    * flags – 操作模式，cv::FileStorage::READ包括打开文件进行读操作
+    */
+    /*  */
+    cv::FileStorage fsSettings(strSettingsFile.c_str(), 	// 将配置文件名转换成为字符串配置文件格式一般为：xml和yaml
+    						   cv::FileStorage::READ);		// 只读
+    //检查文件是否已经打开，如果打开失败，就输出调试信息
     if(!fsSettings.isOpened())
     {
        cerr << "Failed to open settings file at: " << strSettingsFile << endl;
@@ -70,14 +78,14 @@ System::System(const string &strVocFile,					//词典文件路径
        exit(-1);
     }
 
-    //Load ORB Vocabulary
-    cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
 
-    //建立一个新的ORB字典
+    /* Load ORB Vocabulary加载 ORB 词典 */
+    cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
+    //建立一个新的ORB字典 ???此处需要注意：新添加的类型具体是什么类型呢
     mpVocabulary = new ORBVocabulary();
-    //获取字典加载状态
+    //获取字典加载状态//???具体怎样去查看
     bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
-    //如果加载失败，就输出调试信息
+    //如果字典加载失败，就输出调试信息
     if(!bVocLoad)
     {
         cerr << "Wrong path to vocabulary. " << endl;
@@ -88,10 +96,11 @@ System::System(const string &strVocFile,					//词典文件路径
     //否则则说明加载成功
     cout << "Vocabulary loaded!" << endl << endl;
 
-    //Create KeyFrame Database
+
+    //Create KeyFrame Database 创建关键帧数据集 ????
     mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 
-    //Create the Map
+    //Create the Map 创建地图类的对象
     mpMap = new Map();
 
     //Create Drawers. These are used by the Viewer
@@ -99,7 +108,7 @@ System::System(const string &strVocFile,					//词典文件路径
     mpFrameDrawer = new FrameDrawer(mpMap);
     mpMapDrawer = new MapDrawer(mpMap, strSettingsFile);
 
-    //在本主进程中初始化追踪线程
+    //在本主进程中初始化追踪线程 mpTracker
     //Initialize the Tracking thread
     //(it will live in the main thread of execution, the one that called this constructor)
     mpTracker = new Tracking(this,						//现在还不是很明白为什么这里还需要一个this指针  TODO  
@@ -108,7 +117,7 @@ System::System(const string &strVocFile,					//词典文件路径
     						 mpMapDrawer,				//地图绘制器
                              mpMap, 					//地图
                              mpKeyFrameDatabase, 		//关键帧地图
-                             strSettingsFile, 			//设置文件路径
+                             strSettingsFile, 			//设置文件路径，读取配置文件
                              mSensor);					//传感器类型iomanip
 
     //初始化局部建图线程并运行
@@ -129,6 +138,7 @@ System::System(const string &strVocFile,					//词典文件路径
     							mpLoopCloser);					//该函数的参数
 
     //Initialize the Viewer thread and launch
+    // 初始化可视化线程并运行
     if(bUseViewer)
     {
     	//如果指定了，程序的运行过程中需要运行可视化部分
@@ -145,11 +155,12 @@ System::System(const string &strVocFile,					//词典文件路径
     }
 
     //Set pointers between threads
-    //设置进程间的指针
-    mpTracker->SetLocalMapper(mpLocalMapper);
-    mpTracker->SetLoopClosing(mpLoopCloser);
+    //设置进程间的指针  
+    // 但是我不明白设置这些句柄是在干什么???
+    mpTracker->SetLocalMapper(mpLocalMapper);// 设置局部建图的句柄
+    mpTracker->SetLoopClosing(mpLoopCloser); // 设置回环检测器
 
-    mpLocalMapper->SetTracker(mpTracker);
+    mpLocalMapper->SetTracker(mpTracker);// 设置追踪线程句柄
     mpLocalMapper->SetLoopCloser(mpLoopCloser);
 
     mpLoopCloser->SetTracker(mpTracker);
@@ -288,7 +299,10 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
     return Tcw;
 }
 
-//同理，输入为单目图像时的追踪器接口
+/* 同理，输入为单目图像时的追踪器接口
+ * 输入为图像和时间戳
+ * 输出为相机位姿（关键帧的相机位姿，Keyframe.h）
+*/
 cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
 {
     if(mSensor!=MONOCULAR)
@@ -507,7 +521,7 @@ void System::SaveTrajectoryTUM(const string &filename)
 }
 
 
-//保存关键帧的轨迹
+//保存关键帧的轨迹：获取每个关键帧的旋转（并转化为四元数表示）和平移
 void System::SaveKeyFrameTrajectoryTUM(const string &filename)
 {
     cout << endl << "Saving keyframe trajectory to " << filename << " ..." << endl;

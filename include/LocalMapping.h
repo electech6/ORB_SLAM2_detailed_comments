@@ -204,11 +204,11 @@ protected:
     Tracking* mpTracker;
 
     // Tracking线程向LocalMapping中插入关键帧是先插入到该队列中
-    std::list<KeyFrame*> mlNewKeyFrames; ///< 等待处理的关键帧列表
+    std::list<KeyFrame*> mlNewKeyFrames; ///< 等待处理的关键帧列表 是Tracking线程向LocalMapping中插入的关键帧组成
     /// 当前正在处理的关键帧
     KeyFrame* mpCurrentKeyFrame;
 
-    /// 存储当前关键帧生成的地图点,也是等待检查的地图点列表
+    /// 存储当前关键帧生成的地图点,也是等待检查的地图点列表，最近新增的地图点
     std::list<MapPoint*> mlpRecentAddedMapPoints;
 
     /// 操作关键帧列表时使用的互斥量 

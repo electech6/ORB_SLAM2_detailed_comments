@@ -53,6 +53,11 @@ std::vector<cv::Mat> Converter::toDescriptorVector(const cv::Mat &Descriptors)
 }
 
 
+/*
+ * SE3Quat 是g2o中老版本相机位姿的表示，内部使用四元数+平移向量存储位姿同时
+ * 支持李代数上的运算，例如对数映射（log函数）、李代数上增量（update函数）
+ * 指数映射（exp函数）、伴随矩阵（adj函数）等操作
+ */
 //将变换矩阵转换为李代数se3：cv:Mat->g2o::SE3Quat
 g2o::SE3Quat Converter::toSE3Quat(const cv::Mat &cvT)
 {

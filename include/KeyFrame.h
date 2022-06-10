@@ -352,11 +352,12 @@ public:
 
     // KeyPoints, stereo coordinate and descriptors (all associated by an index)
     // 和Frame类中的定义相同
-    const std::vector<cv::KeyPoint> mvKeys;
-    const std::vector<cv::KeyPoint> mvKeysUn;
-    const std::vector<float> mvuRight; // negative value for monocular points
-    const std::vector<float> mvDepth; // negative value for monocular points
-    const cv::Mat mDescriptors;
+    const std::vector<cv::KeyPoint> mvKeys;// 关键帧的特征点
+    const std::vector<cv::KeyPoint> mvKeysUn;// 去畸变后的关键帧的特征点
+    //对于双目，mvuRight存储了左目像素点在右目中的对应点的横坐标 （因为纵坐标是一样的）
+    const std::vector<float> mvuRight; // 右目negative value for monocular points
+    const std::vector<float> mvDepth; // 深度相机对应的深度negative value for monocular points
+    const cv::Mat mDescriptors;//特征点的描述子
 
     //BoW
     // Vector of words to represent images 
@@ -367,7 +368,7 @@ public:
     // Vector of nodes with indexes of local features 
     // 内部实际存储 std::map<NodeId, std::vector<unsigned int> >
     // NodeId 表示节点id，std::vector<unsigned int> 中实际存的是该节点id下所有特征点在图像中的索引
-    DBoW2::FeatureVector mFeatVec; 
+    DBoW2::FeatureVector mFeatVec; //关键帧的BOW向量
 
     /// Pose relative to parent (this is computed when bad flag is activated)
     cv::Mat mTcp;
@@ -378,14 +379,14 @@ public:
     const float mfLogScaleFactor;
     const std::vector<float> mvScaleFactors;// 尺度因子，scale^n，scale=1.2，n为层数
     const std::vector<float> mvLevelSigma2;// 尺度因子的平方
-    const std::vector<float> mvInvLevelSigma2;
+    const std::vector<float> mvInvLevelSigma2;//金字塔尺度因子的平方分之一
 
     /// Image bounds and calibration
     const int mnMinX;
     const int mnMinY;
     const int mnMaxX;
     const int mnMaxY;
-    const cv::Mat mK;
+    const cv::Mat mK;// 内参矩阵
 
 
     // The following variables need to be accessed trough a mutex to be thread safe. ---- 但是大哥..protected也不是这样设计使用的啊
@@ -399,7 +400,7 @@ protected:
     cv::Mat Cw; ///< Stereo middel point. Only for visualization
 
     /// MapPoints associated to keypoints
-    std::vector<MapPoint*> mvpMapPoints;
+    std::vector<MapPoint*> mvpMapPoints;//特征点关联的地图点，索引是序列号，值是地图点
 
     // BoW
     KeyFrameDatabase* mpKeyFrameDB;
