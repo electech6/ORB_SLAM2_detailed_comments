@@ -77,7 +77,7 @@ void Map::EraseMapPoint(MapPoint *pMP)
     mspMapPoints.erase(pMP);
 
     //下面是作者加入的注释. 实际上只是从std::set中删除了地图点的指针, 原先地图点
-    //占用的内存区域并没有得到释放
+    //占用的内存区域并没有得到释放????
     // TODO: This only erase the pointer.
     // Delete the MapPoint
 }

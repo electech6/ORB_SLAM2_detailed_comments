@@ -36,6 +36,14 @@ void LoadImages(const string &strFile, vector<string> &vstrImageFilenames,
 
 int main(int argc, char **argv)
 {
+    /*
+     * argv[0]  ?????未知
+     * argv[1] 词典文件路径
+     * argv[2] 配置文件路径
+     * argv[3] 数据集的路径
+    */
+
+    // 检查输入参数是不是四个，如果不是就说明图像的路径没有设置清楚
     if(argc != 4)
     {
         cerr << endl << "Usage: ./mono_tum path_to_vocabulary path_to_settings path_to_sequence" << endl;
@@ -43,14 +51,16 @@ int main(int argc, char **argv)
     }
 
     // Retrieve paths to images
-    vector<string> vstrImageFilenames;
-    vector<double> vTimestamps;
-    string strFile = string(argv[3])+"/rgb.txt";
-    LoadImages(strFile, vstrImageFilenames, vTimestamps);
+    // 检查图像的路径和加载图像
+    vector<string> vstrImageFilenames;  // 数据集中每帧图像的文件名
+    vector<double> vTimestamps;         // 数据集中每帧图像的时间戳
+    string strFile = string(argv[3])+"/rgb.txt";// 读取包含数据集中图像名的 txt 文件???这是个啥???
+    LoadImages(strFile, vstrImageFilenames, vTimestamps);//导入图像???
 
-    int nImages = vstrImageFilenames.size();
+    int nImages = vstrImageFilenames.size();//读入图像的个数
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
+    // 通过System类的构造函数初始化一个SLAM 系统
     ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::MONOCULAR,true);
 
     // Vector for tracking time statistics
@@ -61,13 +71,13 @@ int main(int argc, char **argv)
     cout << "Start processing sequence ..." << endl;
     cout << "Images in the sequence: " << nImages << endl << endl;
 
-    // Main loop
+    // Main loop. 主循环逐帧处理
     cv::Mat im;
     for(int ni=0; ni<nImages; ni++)
     {
-        // Read image from file
+        // Read image from file 读取每一帧图像及其时间戳
         im = cv::imread(string(argv[3])+"/"+vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
-        double tframe = vTimestamps[ni];
+        double tframe = vTimestamps[ni];//读取每帧图像的时间戳
 
         if(im.empty())
         {
@@ -76,12 +86,14 @@ int main(int argc, char **argv)
             return 1;
         }
 
+// COMPILEDWITHC11是什么???
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 #else
         std::chrono::monotonic_clock::time_point t1 = std::chrono::monotonic_clock::now();
 #endif
 
+        // 跟踪单目图像
         // Pass the image to the SLAM system
         SLAM.TrackMonocular(im,tframe);
 
@@ -106,10 +118,10 @@ int main(int argc, char **argv)
             usleep((T-ttrack)*1e6);
     }
 
-    // Stop all threads
+    // Stop all threads 关闭线程，统计时间，保存轨迹
     SLAM.Shutdown();
 
-    // Tracking time statistics
+    // Tracking time statistics 统计追踪时间
     sort(vTimesTrack.begin(),vTimesTrack.end());
     float totaltime = 0;
     for(int ni=0; ni<nImages; ni++)
@@ -120,7 +132,7 @@ int main(int argc, char **argv)
     cout << "median tracking time: " << vTimesTrack[nImages/2] << endl;
     cout << "mean tracking time: " << totaltime/nImages << endl;
 
-    // Save camera trajectory
+    // Save camera trajectory 保存相机轨迹
     SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
 
     return 0;
@@ -135,12 +147,13 @@ int main(int argc, char **argv)
  */
 void LoadImages(const string &strFile, vector<string> &vstrImageFilenames, vector<double> &vTimestamps)
 {
-    ifstream f;
+    ifstream f;//f输入流
     f.open(strFile.c_str());
 
     // skip first three lines
     // 前三行是注释，跳过
-    string s0;
+    string s0;//表示把从输入流f读入的字符串存放在这个字符串s0中（可以自己随便命名，str什么的都可以）；
+    // 在不设置的情况下系统默认该字符为'\n'，也就是回车换行符（遇到回车停止读入）。
     getline(f,s0);
     getline(f,s0);
     getline(f,s0);
@@ -153,12 +166,12 @@ void LoadImages(const string &strFile, vector<string> &vstrImageFilenames, vecto
         {
             stringstream ss;
             ss << s;
-            double t;
-            string sRGB;
+            double t;//每帧图像的时间戳
+            string sRGB;// 每帧图像的文件名
             ss >> t;
-            vTimestamps.push_back(t);
+            vTimestamps.push_back(t);// 获取每帧图像的时间戳
             ss >> sRGB;
-            vstrImageFilenames.push_back(sRGB);
+            vstrImageFilenames.push_back(sRGB);// 获取每帧图像的文件名
         }
     }
 }

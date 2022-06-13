@@ -49,12 +49,12 @@ namespace ORB_SLAM2
  */
 
 /**
- * @brief 网格的行数
+ * @brief 划分网格的行数
  * 
  */
 #define FRAME_GRID_ROWS 48
 /**
- * @brief 网格的列数
+ * @brief 划分网格的列数
  * 
  */
 #define FRAME_GRID_COLS 64
@@ -428,7 +428,7 @@ public:
     vector<float> mvScaleFactors;		///<图像金字塔每一层的缩放因子
     vector<float> mvInvScaleFactors;	///<以及上面的这个变量的倒数
     vector<float> mvLevelSigma2;		///@todo 目前在frame.c中没有用到，无法下定论
-    vector<float> mvInvLevelSigma2;		///<上面变量的倒数
+    vector<float> mvInvLevelSigma2;		///<上面变量的倒数，相当于信息矩阵的可信程度
 
     /** @} */
 

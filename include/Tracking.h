@@ -72,7 +72,7 @@ public:
     /**
      * @brief 构造函数
      * 
-     * @param[in] pSys              系统实例 
+     * @param[in] pSys              系统实例  ???
      * @param[in] pVoc              字典指针
      * @param[in] pFrameDrawer      帧绘制器
      * @param[in] pMapDrawer        地图绘制器
@@ -160,11 +160,11 @@ public:
     // Tracking states
     ///跟踪状态类型
     enum eTrackingState{
-        SYSTEM_NOT_READY=-1,        //系统没有准备好的状态,一般就是在启动后加载配置文件和词典文件时候的状态
-        NO_IMAGES_YET=0,            //当前无图像
-        NOT_INITIALIZED=1,          //有图像但是没有完成初始化
-        OK=2,                       //正常时候的工作状态
-        LOST=3                      //系统已经跟丢了的状态
+        SYSTEM_NOT_READY=-1,        ///<系统没有准备好的状态,一般就是在启动后加载配置文件和词典文件时候的状态
+        NO_IMAGES_YET=0,            ///<当前无图像
+        NOT_INITIALIZED=1,          ///<有图像但是没有完成初始化
+        OK=2,                       ///<正常时候的工作状态
+        LOST=3                      ///<系统已经跟丢了的状态
     };
 
     ///跟踪状态
@@ -199,7 +199,7 @@ public:
     // Lists used to recover the full camera trajectory at the end of the execution.
     // Basically we store the reference keyframe for each frame and its relative transformation
     ///所有的参考关键帧的位姿;看上面注释的意思,这里存储的也是相对位姿
-    list<cv::Mat> mlRelativeFramePoses;
+    list<cv::Mat> mlRelativeFramePoses;//ref_keyframe 到 相关的关键帧的位姿变换???
     ///参考关键帧
     list<KeyFrame*> mlpReferences;
     ///所有帧的时间戳  //? 还是关键帧的时间戳?
@@ -425,7 +425,7 @@ protected:
     // 上一次重定位的那一帧的ID
     unsigned int mnLastRelocFrameId;
 
-    //Motion Model
+    //Motion Model，运动模型
     cv::Mat mVelocity;
 
     //Color order (true RGB, false BGR, ignored if grayscale)

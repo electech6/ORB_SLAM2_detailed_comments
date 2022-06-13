@@ -55,9 +55,9 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
     mnIterations(0), mnBestInliers(0), mbFixScale(bFixScale)
 {
     mpKF1 = pKF1;       // 当前关键帧
-    mpKF2 = pKF2;       // 闭环关键帧
+    mpKF2 = pKF2;       // 候选的闭环关键帧
 
-    // Step 1 取出当前关键帧中的所有地图点
+    // Step 1 取出当前关键帧中的所有匹配地图点
     vector<MapPoint*> vpKeyFrameMP1 = pKF1->GetMapPointMatches();
 
     // 最多匹配的地图点数目
@@ -66,7 +66,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
     // 预分配空间，在后面使用
     mvpMapPoints1.reserve(mN1);
     mvpMapPoints2.reserve(mN1);
-    mvpMatches12 = vpMatched12;
+    mvpMatches12 = vpMatched12;// 通过词袋模型加速匹配所得到的,两帧特征点的匹配关系所得到的地图点,本质上是来自于候选闭环关键帧的地图点
     mvnIndices1.reserve(mN1);
     mvX3Dc1.reserve(mN1);
     mvX3Dc2.reserve(mN1);
@@ -74,9 +74,9 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
     // 获取两个关键帧的位姿
     cv::Mat Rcw1 = pKF1->GetRotation();
     cv::Mat tcw1 = pKF1->GetTranslation();
-    cv::Mat Rcw2 = pKF2->GetRotation();
-    cv::Mat tcw2 = pKF2->GetTranslation();
-
+    cv::Mat Rcw2 = pKF2->GetRotation();     // 当前帧的旋转矩阵
+    cv::Mat tcw2 = pKF2->GetTranslation();  // 闭环候选帧的转换矩阵
+    // RANSAC中随机选择的时候,存储可以选择的点的id(去除那些存在问题的匹配点后重新排序)
     mvAllIndices.reserve(mN1);
 
     size_t idx=0;
@@ -87,44 +87,46 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
         if(vpMatched12[i1])
         {
             // pMP1和pMP2是匹配的MapPoint
-            MapPoint* pMP1 = vpKeyFrameMP1[i1]; //i1 是匹配地图点在KF1的索引
-            MapPoint* pMP2 = vpMatched12[i1];   //vpMatched12[i1] 是在KF2中对应的匹配地图点
+            MapPoint* pMP1 = vpKeyFrameMP1[i1]; // i1 是匹配地图点在KF1的索引，其中pMP1是在当前帧中的索引对应的地图点
+            MapPoint* pMP2 = vpMatched12[i1];   // vpMatched12[i1] 是在KF2中对应的匹配地图点
 
+            // 如果当前帧K1中的索引对应的地图点为空，就直接进行下一次循环
             if(!pMP1)
                 continue;
-
+            // 同时如果当前帧K1的索引对应的地图点为坏点，也直接进行下一次循环
             if(pMP1->isBad() || pMP2->isBad())
                 continue;
 
             // indexKF1和indexKF2是匹配特征点的索引
-            int indexKF1 = pMP1->GetIndexInKeyFrame(pKF1);
-            int indexKF2 = pMP2->GetIndexInKeyFrame(pKF2);
+            int indexKF1 = pMP1->GetIndexInKeyFrame(pKF1);// 当前地图点在K1(当前关键帧)的索引值
+            int indexKF2 = pMP2->GetIndexInKeyFrame(pKF2);// 闭环候选帧（pKF2）地图点在K2中的索引值
 
             if(indexKF1<0 || indexKF2<0)
                 continue;
 
             // kp1和kp2是匹配的图像特征点
-            const cv::KeyPoint &kp1 = pKF1->mvKeysUn[indexKF1];
-            const cv::KeyPoint &kp2 = pKF2->mvKeysUn[indexKF2];
+            const cv::KeyPoint &kp1 = pKF1->mvKeysUn[indexKF1];// 当前地图点在K1帧的索引值的去畸变后的在K1中的二维坐标点
+            const cv::KeyPoint &kp2 = pKF2->mvKeysUn[indexKF2];// 回环候选帧地图点在K2帧的索引值的去畸变后的在K2中的二维坐标点
 
-            const float sigmaSquare1 = pKF1->mvLevelSigma2[kp1.octave];
-            const float sigmaSquare2 = pKF2->mvLevelSigma2[kp2.octave];
+            //尺度因子的平方
+            const float sigmaSquare1 = pKF1->mvLevelSigma2[kp1.octave];// K1帧中的金字塔层级对应的尺度因子的平方
+            const float sigmaSquare2 = pKF2->mvLevelSigma2[kp2.octave];// K2帧中的金字塔层级对应的尺度因子的平方
 
-	        // 自由度为2的卡方分布，显著性水平为0.01，对应的临界阈值为9.21
+	        // 自由度为2的卡方分布，显著性水平为0.01，也就是99%的概率，可信度较高，对应的临界阈值为9.21
             mvnMaxError1.push_back(9.210*sigmaSquare1);
             mvnMaxError2.push_back(9.210*sigmaSquare2);
 
-            // mvpMapPoints1和mvpMapPoints2是匹配的MapPoints容器
-            mvpMapPoints1.push_back(pMP1);
-            mvpMapPoints2.push_back(pMP2);
-            mvnIndices1.push_back(i1);
+            // mvMapPoints1和mpvpMapPoints2是匹配的MapPoints容器
+            mvpMapPoints1.push_back(pMP1);// pMP1是在当前帧中的索引对应的有效地图点，此时已经去除了无效点和坏点
+            mvpMapPoints2.push_back(pMP2);// vpMatched12[i1] 是在KF2中对应的匹配地图点
+            mvnIndices1.push_back(i1);//有效的匹配关系,在 vpMatched12 (构造函数) 中的索引
 
             // 计算这对匹配地图点分别在各自相机坐标系下的坐标（用来计算SIM3）
-            cv::Mat X3D1w = pMP1->GetWorldPos();
-            mvX3Dc1.push_back(Rcw1*X3D1w+tcw1);
+            cv::Mat X3D1w = pMP1->GetWorldPos();// pMP1这个MapPoint在世界坐标系下的坐标
+            mvX3Dc1.push_back(Rcw1*X3D1w+tcw1); // 坐标变换：从世界坐标系转换到相机坐标系下
 
-            cv::Mat X3D2w = pMP2->GetWorldPos();
-            mvX3Dc2.push_back(Rcw2*X3D2w+tcw2);
+            cv::Mat X3D2w = pMP2->GetWorldPos();// pMP2这个MapPoint在世界坐标系下的坐标
+            mvX3Dc2.push_back(Rcw2*X3D2w+tcw2); // 坐标变换：从世界坐标系转换到相机坐标系下
 
             // 所有有效三维点的索引
             mvAllIndices.push_back(idx);

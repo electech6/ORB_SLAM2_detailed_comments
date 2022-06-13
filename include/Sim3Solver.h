@@ -188,11 +188,11 @@ protected:
     bool mbFixScale;                            // 当前传感器输入的情况下,是否需要计算尺度
 
     // Indices for random selection
-    std::vector<size_t> mvAllIndices;           // RANSAC中随机选择的时候,存储可以选择的点的id(去除那些存在问题的匹配点后重新排序)
+    std::vector<size_t> mvAllIndices;           // RANSAC中随机选择的时候,存储可以选择的点的id(去除那些存在问题的匹配点（外点）后重新排序)
 
-    // Projections
+    // Projections   ？？？不太明白这个部分
     std::vector<cv::Mat> mvP1im1;               // 当前关键帧中的地图点在当前关键帧图像上的投影坐标
-    std::vector<cv::Mat> mvP2im2;               // 闭环关键帧中的地图点在闭环关键帧图像上的投影坐标
+    std::vector<cv::Mat> mvP2im2;               // 闭环关键帧中的地图点在闭环关键帧图像上的投影坐标 
 
     // RANSAC probability
     double mRansacProb;                         // 在计算RANSAC的理论迭代次数时使用到的概率,详细解释还是看函数 SetRansacParameters() 中的注释吧

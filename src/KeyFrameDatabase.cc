@@ -102,7 +102,7 @@ void KeyFrameDatabase::clear()
 
 /**
  * @brief 在闭环检测中找到与该关键帧可能闭环的关键帧（注意不和当前帧连接）
- * Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接的关键帧
+ * Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接（也就是共视）的关键帧
  * Step 2：只和具有共同单词较多的（最大数目的80%以上）关键帧进行相似度计算 
  * Step 3：计算上述候选帧对应的共视关键帧组的总得分，只取最高组得分75%以上的组
  * Step 4：得到上述组中分数最高的关键帧作为闭环候选关键帧
@@ -121,7 +121,7 @@ vector<KeyFrame*> KeyFrameDatabase::DetectLoopCandidates(KeyFrame* pKF, float mi
 
     // Search all keyframes that share a word with current keyframes
     // Discard keyframes connected to the query keyframe
-    // Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接的关键帧
+    // Step 1：找出和当前帧具有公共单词的所有关键帧，不包括与当前帧连接（也就是共视）的关键帧
     {
         unique_lock<mutex> lock(mMutex);
 
@@ -244,7 +244,7 @@ vector<KeyFrame*> KeyFrameDatabase::DetectLoopCandidates(KeyFrame* pKF, float mi
     vector<KeyFrame*> vpLoopCandidates;
     vpLoopCandidates.reserve(lAccScoreAndMatch.size());
 
-    // Step 5：只取组得分大于阈值的组，得到组中分数最高的关键帧们作为闭环候选关键帧
+    // Step 5：只取组得分大于阈值的组，得到组中分数最高的关键帧作为闭环候选关键帧
     for(list<pair<float,KeyFrame*> >::iterator it=lAccScoreAndMatch.begin(), itend=lAccScoreAndMatch.end(); it!=itend; it++)
     {
         if(it->first>minScoreToRetain)
@@ -273,20 +273,21 @@ vector<KeyFrame*> KeyFrameDatabase::DetectLoopCandidates(KeyFrame* pKF, float mi
  */
 vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
 {
-    list<KeyFrame*> lKFsSharingWords;
+    list<KeyFrame*> lKFsSharingWords;// 统计关键帧数据库中与当前帧存在公共单词的关键帧
 
     // Search all keyframes that share a word with current frame
     // Step 1：找出和当前帧具有公共单词(word)的所有关键帧
     {
-        unique_lock<mutex> lock(mMutex);
+        unique_lock<mutex> lock(mMutex);// ???
 
         // mBowVec 内部实际存储的是std::map<WordId, WordValue>
         // WordId 和 WordValue 表示Word在叶子中的id 和权重
         for(DBoW2::BowVector::const_iterator vit=F->mBowVec.begin(), vend=F->mBowVec.end(); vit != vend; vit++)
         {
-            // 根据倒排索引，提取所有包含该wordid的所有KeyFrame
-            list<KeyFrame*> &lKFs = mvInvertedFile[vit->first];
+            // 根据倒排索引，提取所有包含该wordid的所有KeyFrame ？？？什么是倒排索引
+            list<KeyFrame*> &lKFs = mvInvertedFile[vit->first/*wordID*/];// 倒排索引，mvInvertedFile[i]表示包含了该word id的所有关键帧
 
+            // 遍历包含该wordid的所有KeyFrame
             for(list<KeyFrame*>::iterator lit=lKFs.begin(), lend= lKFs.end(); lit!=lend; lit++)
             {
                 KeyFrame* pKFi=*lit;
@@ -294,9 +295,9 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
                 if(pKFi->mnRelocQuery!=F->mnId)
                 {
                     // pKFi还没有标记为F的重定位候选帧
-                    pKFi->mnRelocWords=0;
-                    pKFi->mnRelocQuery=F->mnId;
-                    lKFsSharingWords.push_back(pKFi);
+                    pKFi->mnRelocWords=0;// 和那个要进行重定位的帧,所具有相同的单词的个数初始化为0
+                    pKFi->mnRelocQuery=F->mnId;// 标志位置为当前帧的ID序列，防止重复选取
+                    lKFsSharingWords.push_back(pKFi);// 统计关键帧数据库中与当前帧存在公共单词的关键帧
                 }
                 pKFi->mnRelocWords++;
             }
@@ -308,9 +309,11 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
 
     // Only compare against those keyframes that share enough words
     // Step 2：统计上述关键帧中与当前帧F具有共同单词最多的单词数maxCommonWords，用来设定阈值1
-    int maxCommonWords=0;
+    int maxCommonWords=0;//关键帧数据库中与当前帧F具有共同单词最多的单词数量
+    // 遍历键帧数据库中与当前帧存在公共单词的关键帧
     for(list<KeyFrame*>::iterator lit=lKFsSharingWords.begin(), lend= lKFsSharingWords.end(); lit!=lend; lit++)
     {
+        // 更新maxCommonWords->关键帧数据库中与当前帧F具有共同单词最多的单词数量
         if((*lit)->mnRelocWords>maxCommonWords)
             maxCommonWords=(*lit)->mnRelocWords;
     }
@@ -318,42 +321,43 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
     // 阈值1：最小公共单词数为最大公共单词数目的0.8倍
     int minCommonWords = maxCommonWords*0.8f;
 
-    list<pair<float,KeyFrame*> > lScoreAndMatch;
+    list<pair<float,KeyFrame*> > lScoreAndMatch;//存放匹配度和关键帧<匹配度，关键帧>
+    int nscores=0;///???当前帧F共有单词较多（大于minCommonWords）的关键帧
 
-    int nscores=0;
-
-    // Compute similarity score.
+    // Compute similarity score.计算相似度得分
     // Step 3：遍历上述关键帧，挑选出共有单词数大于阈值1的及其和当前帧单词匹配得分存入lScoreAndMatch
     for(list<KeyFrame*>::iterator lit=lKFsSharingWords.begin(), lend= lKFsSharingWords.end(); lit!=lend; lit++)
     {
         KeyFrame* pKFi = *lit;
 
-        // 当前帧F只和具有共同单词较多（大于minCommonWords）的关键帧进行比较
+        // 当前帧F只和共有单词较多（大于minCommonWords）的关键帧进行比较
         if(pKFi->mnRelocWords>minCommonWords)
         {
             nscores++;  // 这个变量后面没有用到
             // 用mBowVec来计算两者的相似度得分
-            float si = mpVoc->score(F->mBowVec,pKFi->mBowVec);
+            float si = mpVoc->score(F->mBowVec,pKFi->mBowVec);//？？？
             pKFi->mRelocScore=si;
-            lScoreAndMatch.push_back(make_pair(si,pKFi));
+            lScoreAndMatch.push_back(make_pair(si,pKFi));// 将匹配度和关键帧存入lScoreAndMatch
         }
     }
 
+    // 如果和当前帧满足条件的匹配关键帧为0，无法进行重定位，返回空
     if(lScoreAndMatch.empty())
         return vector<KeyFrame*>();
 
-    list<pair<float,KeyFrame*> > lAccScoreAndMatch;
-    float bestAccScore = 0;
+    list<pair<float,KeyFrame*> > lAccScoreAndMatch;//存放匹配度和关键帧<该组的累计匹配得分，最匹配的关键帧>
+    float bestAccScore = 0;//最高组得分(最高的累计得分)
 
     // Lets now accumulate score by covisibility
     // Step 4：计算lScoreAndMatch中每个关键帧的共视关键帧组的总得分，得到最高组得分bestAccScore，并以此决定阈值2
     // 单单计算当前帧和某一关键帧的相似性是不够的，这里将与关键帧共视程度最高的前十个关键帧归为一组，计算累计得分
     for(list<pair<float,KeyFrame*> >::iterator it=lScoreAndMatch.begin(), itend=lScoreAndMatch.end(); it!=itend; it++)
     {
-        KeyFrame* pKFi = it->second;
+        KeyFrame* pKFi = it->second;// 存放匹配度和关键帧<匹配度，关键帧>
         // 取出与关键帧pKFi共视程度最高的前10个关键帧
         vector<KeyFrame*> vpNeighs = pKFi->GetBestCovisibilityKeyFrames(10);
 
+        /*此处的操作类似于给下面的变量赋初始值*/
         // 该组最高分数
         float bestScore = it->first; 
         // 该组累计得分
@@ -364,12 +368,12 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
         for(vector<KeyFrame*>::iterator vit=vpNeighs.begin(), vend=vpNeighs.end(); vit!=vend; vit++)
         {
             KeyFrame* pKF2 = *vit;
-            if(pKF2->mnRelocQuery!=F->mnId)
+            if(pKF2->mnRelocQuery!=F->mnId)// 防止重复操作
                 continue;
             // 只有pKF2也在重定位候选帧中，才能贡献分数
-            accScore+=pKF2->mRelocScore;
+            accScore+=pKF2->mRelocScore;//累计得分的意思就是将前10的得分进行相加
 
-            // 统计得到组里分数最高的KeyFrame
+            // 统计并更新得到组里分数最高的KeyFramep->BestKF
             if(pKF2->mRelocScore>bestScore)
             {
                 pBestKF=pKF2;
@@ -378,7 +382,7 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
 
         }
 
-        lAccScoreAndMatch.push_back(make_pair(accScore,pBestKF));
+        lAccScoreAndMatch.push_back(make_pair(accScore, pBestKF));
 
         // 记录所有组中最高的得分
         if(accScore>bestAccScore) 
@@ -389,26 +393,25 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
     // Step 5：得到所有组中总得分大于阈值2的，组内得分最高的关键帧，作为候选关键帧组
     //阈值2：最高得分的0.75倍
     float minScoreToRetain = 0.75f*bestAccScore; 
-    set<KeyFrame*> spAlreadyAddedKF;
-    vector<KeyFrame*> vpRelocCandidates;
-    vpRelocCandidates.reserve(lAccScoreAndMatch.size());
+    set<KeyFrame*> spAlreadyAddedKF;//候选关键帧队列set
+    vector<KeyFrame*> vpRelocCandidates;//相似的候选关键帧数组用于重定位
+    vpRelocCandidates.reserve(lAccScoreAndMatch.size());//设置容量
     for(list<pair<float,KeyFrame*> >::iterator it=lAccScoreAndMatch.begin(), itend=lAccScoreAndMatch.end(); it!=itend; it++)
     {
-        const float &si = it->first;
+        const float &si = it->first;//匹配度->it存放匹配度和关键帧<该组的累计匹配得分，最匹配的关键帧>
         // 只返回累计得分大于阈值2的组中分数最高的关键帧
         if(si>minScoreToRetain)
         {
-            KeyFrame* pKFi = it->second;
+            KeyFrame* pKFi = it->second;//得分忙于阈值2的组的最优匹配关键帧
             // 判断该pKFi是否已经添加在队列中了
-            if(!spAlreadyAddedKF.count(pKFi))
+            if(!spAlreadyAddedKF.count(pKFi))//防止重复操作vpRelocCandidates.push_back(pKFi)
             {
                 vpRelocCandidates.push_back(pKFi);
                 spAlreadyAddedKF.insert(pKFi);
             }
         }
     }
-
-    return vpRelocCandidates;
+    return vpRelocCandidates;//候选关键帧组-相似的候选关键帧数组
 }
 
 } //namespace ORB_SLAM

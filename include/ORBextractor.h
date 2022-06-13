@@ -159,6 +159,7 @@ public:
     }
 
     ///这个是用来存储图像金字塔的变量，一个元素存储一层图像
+    // 扩边后的图像坐标位置，去掉扩边后的矩形
     std::vector<cv::Mat> mvImagePyramid;
 
 protected:

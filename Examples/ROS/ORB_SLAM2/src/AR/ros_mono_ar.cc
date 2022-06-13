@@ -40,7 +40,7 @@ using namespace std;
 ORB_SLAM2::ViewerAR viewerAR;
 bool bRGB = true;
 
-cv::Mat K;
+cv::Mat K;//相机的内参矩阵
 cv::Mat DistCoef;
 
 
