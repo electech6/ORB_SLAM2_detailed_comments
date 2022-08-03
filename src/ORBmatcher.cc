@@ -430,7 +430,8 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
 
     // Decompose Scw
     // Step 1 分解Sim变换矩阵
-    //? 为什么要剥离尺度信息？
+    // 这里的尺度在Pc归一化时会被约掉。可以理解为投影的时候不需要尺度，因为变换到了射线上，尺度无关
+    // 尺度会在后面优化的时候用到
     cv::Mat sRcw = Scw.rowRange(0,3).colRange(0,3);
     const float scw = sqrt(sRcw.row(0).dot(sRcw.row(0)));   // 计算得到尺度s
     cv::Mat Rcw = sRcw/scw;                                 // 保证旋转矩阵行列式为1
@@ -1430,7 +1431,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
  * （之前使用SearchByBoW进行特征点匹配时会有漏匹配）
  * @param[in] pKF1              当前帧
  * @param[in] pKF2              闭环候选帧
- * @param[in] vpMatches12       i表示匹配的pKF1 特征点索引，vpMatches12[i]表示匹配的地图点，null表示没有匹配
+ * @param[in] vpMatches12       i表示匹配的pKF1 特征点索引，vpMatches12[i]表示匹配的pKF2中地图点，null表示没有匹配
  * @param[in] s12               pKF2 到 pKF1 的Sim 变换中的尺度
  * @param[in] R12               pKF2 到 pKF1 的Sim 变换中的旋转矩阵
  * @param[in] t12               pKF2 到 pKF1 的Sim 变换中的平移向量

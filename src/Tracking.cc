@@ -324,11 +324,6 @@ cv::Mat Tracking::GrabImageRGBD(
     }
 
     // step 2 ：将深度相机的disparity转为Depth , 也就是转换成为真正尺度下的深度
-    //这里的判断条件感觉有些尴尬
-    //前者和后者满足一个就可以了
-    //满足前者意味着,mDepthMapFactor 相对1来讲要足够大
-    //满足后者意味着,如果深度图像不是浮点型? 才会执行
-    //意思就是说,如果读取到的深度图像是浮点型,就不执行这个尺度的变换操作了呗? TODO 
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
         imDepth.convertTo(  //将图像转换成为另外一种数据类型,具有可选的数据大小缩放系数
             imDepth,            //输出图像
@@ -1634,7 +1629,6 @@ void Tracking::CreateNewKeyFrame()
 
     // Step 1：将当前帧构造成关键帧
     KeyFrame* pKF = new KeyFrame(mCurrentFrame,mpMap,mpKeyFrameDB);
-
     // Step 2：将当前关键帧设置为当前帧的参考关键帧
     // 在UpdateLocalKeyFrames函数中会将与当前关键帧共视程度最高的关键帧设定为当前帧的参考关键帧
     mpReferenceKF = pKF;

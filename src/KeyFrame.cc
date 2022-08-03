@@ -376,7 +376,7 @@ int KeyFrame::TrackedMapPoints(const int &minObs)
                         nPoints++;
                 }
                 else
-                    nPoints++;
+                    nPoints++; //!bug
             }
         }
     }
@@ -514,6 +514,8 @@ void KeyFrame::UpdateConnections()
 
         // mspConnectedKeyFrames = spConnectedKeyFrames;
         // 更新当前帧与其它关键帧的连接权重
+        // ?bug 这里直接赋值，会把小于阈值的共视关系也放入mConnectedKeyFrameWeights，会增加计算量
+        // ?但后续主要用mvpOrderedConnectedKeyFrames来取共视帧，对结果没影响
         mConnectedKeyFrameWeights = KFcounter;
         mvpOrderedConnectedKeyFrames = vector<KeyFrame*>(lKFs.begin(),lKFs.end());
         mvOrderedWeights = vector<int>(lWs.begin(), lWs.end());

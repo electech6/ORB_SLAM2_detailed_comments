@@ -1679,7 +1679,7 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
             vbGood[vMatches12[i].first]=true;
     }
 
-    // Step 7 得到3D点中较大的视差角，并且转换成为角度制表示
+    // Step 7 得到3D点中较小的视差角，并且转换成为角度制表示
     if(nGood>0)
     {
         // 从小到大排序，注意vCosParallax值越大，视差越小

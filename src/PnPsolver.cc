@@ -227,7 +227,8 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     if(mRansacMinInliers==N)//根据期望的残差大小来计算RANSAC需要迭代的次数
         nIterations=1;
     else
-        nIterations = ceil(log(1-mRansacProb)/log(1-pow(mRansacEpsilon,3)));
+        nIterations = ceil(log(1-mRansacProb)/log(1-pow(mRansacEpsilon,4)));
+        // nIterations = ceil(log(1-mRansacProb)/log(1-pow(mRansacEpsilon,3)));  //!bug 对于Sim3是3,EPnP是4
 
     mRansacMaxIts = max(1,min(nIterations,mRansacMaxIts));
 
