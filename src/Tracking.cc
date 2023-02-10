@@ -1291,7 +1291,7 @@ void Tracking::UpdateLastFrame()
             // 加入上一帧的地图点中
             mLastFrame.mvpMapPoints[i]=pNewMP; 
 
-            // 标记为临时添加的MapPoint，之后在CreateNewKeyFrame之前会全部删除
+            // 标记为临时添加的MapPoint，之后在CreateNewKeyFrame之前会全部删除，并未添加新的观测信息
             mlpTemporalPoints.push_back(pNewMP);
             nPoints++;
         }
@@ -1662,7 +1662,7 @@ void Tracking::CreateNewKeyFrame()
             // Step 3.2：按照深度从小到大排序
             sort(vDepthIdx.begin(),vDepthIdx.end());
 
-            // Step 3.3：从中找出不是地图点的生成临时地图点 
+            // Step 3.3：从中找出不是地图点的包装为地图点 
             // 处理的近点的个数
             int nPoints = 0;
             for(size_t j=0; j<vDepthIdx.size();j++)
@@ -1671,7 +1671,7 @@ void Tracking::CreateNewKeyFrame()
 
                 bool bCreateNew = false;
 
-                // 如果这个点对应在上一帧中的地图点没有,或者创建后就没有被观测到,那么就生成一个临时的地图点
+                // 如果这个点对应在上一帧中的地图点没有,或者创建后就没有被观测到,那么就包装为地图点
                 MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
                 if(!pMP)
                     bCreateNew = true;
@@ -1977,7 +1977,7 @@ void Tracking::UpdateLocalKeyFrames()
             }
         }
 
-        // 类型3:将一级共视关键帧的父关键帧（将邻居的父母们拉拢入伙）
+        // 类型3:将一级共视关键帧的父关键帧作为局部关键帧（将邻居的父母们拉拢入伙）
         KeyFrame* pParent = pKF->GetParent();
         if(pParent)
         {
