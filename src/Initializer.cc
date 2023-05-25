@@ -1619,9 +1619,7 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
 
         // Check depth in front of first camera (only if enough parallax, as "infinite" points can easily go to negative depth)
         // 如果深度值为负值，为非法三维点跳过该匹配点对
-        // ?视差比较小时，重投影误差比较大。这里0.99998 对应的角度为0.36°,这里不应该是 cosParallax>0.99998 吗？
-        // ?因为后面判断vbGood 点时的条件也是 cosParallax<0.99998 
-        // !可能导致初始化不稳定
+	// 只有当视差足够大时（cosParallax小于0.99998说明此时视差大于0.36°）才检查深度值，因为小视差情况下的点很容易有负深度
         if(p3dC1.at<float>(2)<=0 && cosParallax<0.99998)
             continue;
 
