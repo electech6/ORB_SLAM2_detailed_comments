@@ -201,7 +201,7 @@ public:
    * @param[in] u                2D点坐标
    * @param[in] v                2D点坐标 
    */
-  void fill_M(CvMat * M, const int row, const double * alphas, const double u, const double v);
+  void fill_M(cv::Mat& M, const int row, const double * alphas, const double u, const double v);
   /**
    * @brief 通过给出的beta和vi,计算控制点在相机坐标系下的坐标
    * @param[in] betas       beta
@@ -224,7 +224,7 @@ public:
    * @param[in]  Rho     非齐次项 \rho, 列向量
    * @param[out] betas   计算得到的beta
    */
-  void find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  void find_betas_approx_1(const cv::Mat& L_6x10, const cv::Mat& Rho, double * betas);
 
   /**
    * @brief 计算N=2时候的粗糙近似解，暴力将其他量置为0
@@ -233,7 +233,7 @@ public:
    * @param[in]  Rho     非齐次项 \rho, 列向量
    * @param[out] betas   计算得到的beta
    */
-  void find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  void find_betas_approx_2(const cv::Mat& L_6x10, const cv::Mat& Rho, double * betas);
 
   /**
    * @brief 计算N=3时候的粗糙近似解，暴力将其他量置为0
@@ -242,14 +242,14 @@ public:
    * @param[in]  Rho     非齐次项 \rho, 列向量
    * @param[out] betas   计算得到的beta
    */
-  void find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  void find_betas_approx_3(const cv::Mat& L_6x10, const cv::Mat& Rho, double * betas);
   /**
    * @brief 使用QR分解来求解增量方程 
    * @param[in]  A   洗漱矩阵
    * @param[in]  b   非齐次项
    * @param[out] X   增量
    */
-  void qr_solve(CvMat * A, CvMat * b, CvMat * X);
+  void qr_solve(cv::Mat& A, cv::Mat& b, cv::Mat& X);
 
   /**
    * @brief 计算两个三维向量的点乘
@@ -284,7 +284,7 @@ public:
    * @param[in]  Rho               Rho向量
    * @param[out] current_betas     优化之后的Beta
    */
-  void gauss_newton(const CvMat * L_6x10, const CvMat * Rho, double current_betas[4]);
+  void gauss_newton(const cv::Mat& L_6x10, const cv::Mat& Rho, double current_betas[4]);
   /**
    * @brief 计算高斯牛顿法优化时,增量方程中的系数矩阵和非齐次项
    * @param[in]  l_6x10 L矩阵
@@ -294,7 +294,7 @@ public:
    * @param[out] b      计算得到的增量方程中的非齐次项
    */
   void compute_A_and_b_gauss_newton(const double * l_6x10, const double * rho,
-				    double cb[4], CvMat * A, CvMat * b);
+				    double cb[4], cv::Mat& A, cv::Mat& b);
 
   /**
    * @brief 根据已经得到的控制点在当前相机坐标系下的坐标来恢复出相机的位姿

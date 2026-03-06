@@ -566,34 +566,27 @@ void PnPsolver::choose_control_points(void)
   // ref: https://yjk94.wordpress.com/2016/11/11/pca-to-layman/
 
   // 将所有的3D参考点写成矩阵，(number_of_correspondences * 3)的矩阵
-  CvMat * PW0 = cvCreateMat(number_of_correspondences, 3, CV_64F);
+  cv::Mat PW0(number_of_correspondences, 3, CV_64F);
 
   double pw0tpw0[3 * 3], dc[3], uct[3 * 3];         // 下面变量的数据区
-  CvMat PW0tPW0 = cvMat(3, 3, CV_64F, pw0tpw0);     // PW0^T * PW0，为了进行特征值分解
-  CvMat DC      = cvMat(3, 1, CV_64F, dc);          // 特征值
-  CvMat UCt     = cvMat(3, 3, CV_64F, uct);         // 特征向量
+  cv::Mat PW0tPW0(3, 3, CV_64F, pw0tpw0);     // PW0^T * PW0，为了进行特征值分解
+  cv::Mat DC(3, 1, CV_64F, dc);          // 特征值
+  cv::Mat UCt(3, 3, CV_64F, uct);         // 特征向量
 
   // Step 2.1：将存在pws中的参考3D点减去第一个控制点(均值中心)的坐标（相当于把第一个控制点作为原点）, 并存入PW0
   for(int i = 0; i < number_of_correspondences; i++)
     for(int j = 0; j < 3; j++)
-      PW0->data.db[3 * i + j] = pws[3 * i + j] - cws[0][j];
+      PW0.ptr<double>()[3 * i + j] = pws[3 * i + j] - cws[0][j];
 
   // Step 2.2：利用特征值分解得到三个主方向
   // PW0^T * PW0
   // cvMulTransposed(A_src,Res_dst,order, delta=null,scale=1): 
   // Calculates Res=(A-delta)*(A-delta)^T (order=0) or (A-delta)^T*(A-delta) (order=1)
-  cvMulTransposed(PW0, &PW0tPW0, 1);
+  cv::mulTransposed(PW0, PW0tPW0, true, cv::noArray(), -1, CV_64F);
 
   // 这里实际是特征值分解
-  cvSVD(&PW0tPW0,                         // A
-        &DC,                              // W，实际是特征值
-        &UCt,                             // U，实际是特征向量
-        0,                                // V
-        CV_SVD_MODIFY_A | CV_SVD_U_T);    // flags
-
-  cvReleaseMat(&PW0);
-
-  // Step 2.3：得到C1, C2, C3三个3D控制点，最后加上之前减掉的第一个控制点这个偏移量
+  cv::Mat UCt_temp;
+  cv::SVD::compute(PW0tPW0, DC, UCt, UCt_temp, cv::SVD::MODIFY_A | cv::SVD::FULL_UV);  // Step 2.3：得到C1, C2, C3三个3D控制点，最后加上之前减掉的第一个控制点这个偏移量
   // ?这里的循环次数不应写成4,而应该是变量 number_of_correspondences
   for(int i = 1; i < 4; i++) {
     // 这里只需要遍历后面3个控制点
@@ -613,8 +606,8 @@ void PnPsolver::compute_barycentric_coordinates(void)
   // cws1 cws2 cws3 cws4为世界坐标系下四个控制点的坐标
   // alphas 四个控制点的系数，每一个pws，都有一组alphas与之对应
   double cc[3 * 3], cc_inv[3 * 3];
-  CvMat CC     = cvMat(3, 3, CV_64F, cc);       // 除第1个控制点外，另外3个控制点在控制点坐标系下的坐标
-  CvMat CC_inv = cvMat(3, 3, CV_64F, cc_inv);   // 上面这个矩阵的逆矩阵
+  cv::Mat CC(3, 3, CV_64F, cc);       // 除第1个控制点外，另外3个控制点在控制点坐标系下的坐标
+  cv::Mat CC_inv(3, 3, CV_64F, cc_inv);   // 上面这个矩阵的逆矩阵
 
   // Step 1：第一个控制点在质心的位置，后面三个控制点减去第一个控制点的坐标（以第一个控制点为原点）
   // 减去质心后得到x y z轴
@@ -633,7 +626,7 @@ void PnPsolver::compute_barycentric_coordinates(void)
     for(int j = 1; j < 4; j++)                    // 哪个控制点
       cc[3 * i + j - 1] = cws[j][i] - cws[0][i];  // 坐标索引中的-1是考虑到跳过了第1个控制点0
 
-  cvInvert(&CC, &CC_inv, CV_SVD);
+  cv::invert(CC, CC_inv, cv::DECOMP_SVD);
   double * ci = cc_inv;
   for(int i = 0; i < number_of_correspondences; i++) {
     double * pi = pws + 3 * i;                    // pi指向第i个3D点的首地址
@@ -666,13 +659,13 @@ void PnPsolver::compute_barycentric_coordinates(void)
  * @param[in] u                2D点坐标u
  * @param[in] v                2D点坐标v
  */
-void PnPsolver::fill_M(CvMat * M,
+void PnPsolver::fill_M(cv::Mat& M,
 		  const int row, const double * as, const double u, const double v)
 {
   // 第一行起点
-  double * M1 = M->data.db + row * 12;
+  double * M1 = M.ptr<double>(row * 2);
   // 第二行起点
-  double * M2 = M1 + 12;
+  double * M2 = M.ptr<double>(row * 2 + 1);
 
   // 对每一个参考点对：
   // |ai1*fu, 0,      ai1(uc-ui),|  ai2*fu, 0,      ai2(uc-ui),|  ai3*fu, 0,      ai3(uc-ui),|  ai4*fu, 0,      ai4(uc-ui)| 
@@ -745,7 +738,7 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   compute_barycentric_coordinates();
 
   // Step 3：构造M矩阵，EPnP原始论文中公式(3)(4)-->(5)(6)(7); 矩阵的大小为 2n*12 ,n 为使用的匹配点的对数
-  CvMat * M = cvCreateMat(2 * number_of_correspondences, 12, CV_64F);
+  cv::Mat M(2 * number_of_correspondences, 12, CV_64F);
 
   // 根据每一对匹配点的数据来填充矩阵M中的数据
   // alphas:  世界坐标系下3D点用4个虚拟控制点表达时的系数
@@ -754,24 +747,22 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
     fill_M(M, 2 * i, alphas + 4 * i, us[2 * i], us[2 * i + 1]);
 
   double mtm[12 * 12], d[12], ut[12 * 12];
-  CvMat MtM = cvMat(12, 12, CV_64F, mtm);
-  CvMat D   = cvMat(12,  1, CV_64F, d);     // 这里实际是特征值
-  CvMat Ut  = cvMat(12, 12, CV_64F, ut);    // 这里实际是特征向量
+  cv::Mat MtM(12, 12, CV_64F, mtm);
+  cv::Mat D(12, 1, CV_64F, d);     // 这里实际是特征值
+  cv::Mat Ut(12, 12, CV_64F, ut);    // 这里实际是特征向量
 
   // Step 4：求解Mx = 0
 
   // Step 4.1 先计算其中的特征向量vi
   // 求M'M
-  cvMulTransposed(M, &MtM, 1);
+  cv::mulTransposed(M, MtM, true, cv::noArray(), -1, CV_64F);
   // 该函数实际是特征值分解，得到特征值D，特征向量ut，对应EPnP论文式(8)中的vi
-  cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T); 
-  cvReleaseMat(&M);
-
-  // Step 4.2 计算分情况讨论的时候需要用到的矩阵L和\rho
+  cv::Mat Ut_temp;
+  cv::SVD::compute(MtM, D, Ut, Ut_temp, cv::SVD::MODIFY_A | cv::SVD::FULL_UV);  // Step 4.2 计算分情况讨论的时候需要用到的矩阵L和\rho
   // EPnP论文中式13中的L和\rho
   double l_6x10[6 * 10], rho[6];
-  CvMat L_6x10 = cvMat(6, 10, CV_64F, l_6x10);
-  CvMat Rho    = cvMat(6,  1, CV_64F, rho);
+  cv::Mat L_6x10(6, 10, CV_64F, l_6x10);
+  cv::Mat Rho(6, 1, CV_64F, rho);
 
   // 计算这两个量,6x10是先准备按照EPnP论文中的N=4来计算的
   compute_L_6x10(ut, l_6x10);
@@ -790,19 +781,19 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
 
 
   // 求解近似解：N=4的情况
-  find_betas_approx_1(&L_6x10, &Rho, Betas[1]);
+  find_betas_approx_1(L_6x10, Rho, Betas[1]);
   // 高斯牛顿法迭代优化得到 beta
-  gauss_newton(&L_6x10, &Rho, Betas[1]);
+  gauss_newton(L_6x10, Rho, Betas[1]);
   rep_errors[1] = compute_R_and_t(ut, Betas[1], Rs[1], ts[1]);   // 注意是每对匹配点的平均的重投影误差
 
   // 求解近似解：N=2的情况
-  find_betas_approx_2(&L_6x10, &Rho, Betas[2]);
-  gauss_newton(&L_6x10, &Rho, Betas[2]);
+  find_betas_approx_2(L_6x10, Rho, Betas[2]);
+  gauss_newton(L_6x10, Rho, Betas[2]);
   rep_errors[2] = compute_R_and_t(ut, Betas[2], Rs[2], ts[2]);
 
   // 求解近似解：N=3的情况
-  find_betas_approx_3(&L_6x10, &Rho, Betas[3]);
-  gauss_newton(&L_6x10, &Rho, Betas[3]);
+  find_betas_approx_3(L_6x10, Rho, Betas[3]);
+  gauss_newton(L_6x10, Rho, Betas[3]);
   rep_errors[3] = compute_R_and_t(ut, Betas[3], Rs[3], ts[3]);
 
   // Step 5 看看哪种情况得到的效果最好,然后就选哪个
@@ -913,13 +904,13 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
 
   // 准备构造矩阵A,B以及B^T*A的SVD分解的值
   double abt[3 * 3], abt_d[3], abt_u[3 * 3], abt_v[3 * 3];
-  CvMat ABt   = cvMat(3, 3, CV_64F, abt);       // H=B^T*A
-  CvMat ABt_D = cvMat(3, 1, CV_64F, abt_d);     // 奇异值分解得到的特征值
-  CvMat ABt_U = cvMat(3, 3, CV_64F, abt_u);     // 奇异值分解得到的左特征矩阵
-  CvMat ABt_V = cvMat(3, 3, CV_64F, abt_v);     // 奇异值分解得到的右特征矩阵
+  cv::Mat ABt(3, 3, CV_64F, abt);       // H=B^T*A
+  cv::Mat ABt_D(3, 1, CV_64F, abt_d);     // 奇异值分解得到的特征值
+  cv::Mat ABt_U(3, 3, CV_64F, abt_u);     // 奇异值分解得到的左特征矩阵
+  cv::Mat ABt_V(3, 3, CV_64F, abt_v);     // 奇异值分解得到的右特征矩阵
 
   // Step 2 构造矩阵H=B^T*A,不过这里是隐含的构造
-  cvSetZero(&ABt);
+  ABt.setTo(0);
   // 遍历每一个3D点
   for(int i = 0; i < number_of_correspondences; i++) {
     // 定位
@@ -935,7 +926,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
   }
 
   // Step 3 对得到的H矩阵进行奇异值分解
-  cvSVD(&ABt, &ABt_D, &ABt_U, &ABt_V, CV_SVD_MODIFY_A);
+  cv::SVD::compute(ABt, ABt_D, ABt_U, ABt_V, cv::SVD::MODIFY_A | cv::SVD::FULL_UV);
 
   // Step 4 R=U*V^T, 并且进行合法性检查
   for(int i = 0; i < 3; i++)
@@ -1020,7 +1011,7 @@ double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
  * @param[in]  Rho     非齐次项 \rho, 列向量
  * @param[out] betas   计算得到的beta
  */
-void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
+void PnPsolver::find_betas_approx_1(const cv::Mat& L_6x10, const cv::Mat& Rho,
 			       double * betas)
 {
   // 计算N=4时候的粗糙近似解，暴力将其他量置为0
@@ -1028,19 +1019,19 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
   // betas_approx_1 = [B11 B12     B13         B14            ]  -- L_6x4 中一行提取出来的内容
 
   double l_6x4[6 * 4], b4[4];
-  CvMat L_6x4 = cvMat(6, 4, CV_64F, l_6x4);
-  CvMat B4    = cvMat(4, 1, CV_64F, b4);
+  cv::Mat L_6x4(6, 4, CV_64F, l_6x4);
+  cv::Mat B4(4, 1, CV_64F, b4);
 
   // 提取L_6x10矩阵中每行的第0,1,3,6个元素，得到L_6x4
   for(int i = 0; i < 6; i++) {
-    cvmSet(&L_6x4, i, 0, cvmGet(L_6x10, i, 0)); //将L_6x10的第i行的第0个元素设置为L_6x4的第i行的第0个元素
-    cvmSet(&L_6x4, i, 1, cvmGet(L_6x10, i, 1));
-    cvmSet(&L_6x4, i, 2, cvmGet(L_6x10, i, 3));
-    cvmSet(&L_6x4, i, 3, cvmGet(L_6x10, i, 6));
+    L_6x4.at<double>(i, 0) = L_6x10.at<double>(i, 0); //将L_6x10的第i行的第0个元素设置为L_6x4的第i行的第0个元素
+    L_6x4.at<double>(i, 1) = L_6x10.at<double>(i, 1);
+    L_6x4.at<double>(i, 2) = L_6x10.at<double>(i, 3);
+    L_6x4.at<double>(i, 3) = L_6x10.at<double>(i, 6);
   }
 
   // SVD方式求解方程组 L_6x4 * B4 = Rho
-  cvSolve(&L_6x4, Rho, &B4, CV_SVD);
+  cv::solve(L_6x4, Rho, B4, cv::DECOMP_SVD);
   // 得到的解是 b00 b01 b02 b03 因此解出来b00即可
   if (b4[0] < 0) {
     betas[0] = sqrt(-b4[0]);
@@ -1062,24 +1053,24 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
  * @param[in]  Rho     非齐次项 \rho, 列向量
  * @param[out] betas   计算得到的beta
  */
-void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
+void PnPsolver::find_betas_approx_2(const cv::Mat& L_6x10, const cv::Mat& Rho,
 			       double * betas)
 {
   // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
   // betas_approx_2 = [B11 B12 B22                            ] 
   double l_6x3[6 * 3], b3[3];
-  CvMat L_6x3  = cvMat(6, 3, CV_64F, l_6x3);
-  CvMat B3     = cvMat(3, 1, CV_64F, b3);
+  cv::Mat L_6x3(6, 3, CV_64F, l_6x3);
+  cv::Mat B3(3, 1, CV_64F, b3);
 
   // 提取
   for(int i = 0; i < 6; i++) {
-    cvmSet(&L_6x3, i, 0, cvmGet(L_6x10, i, 0));
-    cvmSet(&L_6x3, i, 1, cvmGet(L_6x10, i, 1));
-    cvmSet(&L_6x3, i, 2, cvmGet(L_6x10, i, 2));
+    L_6x3.at<double>(i, 0) = L_6x10.at<double>(i, 0);
+    L_6x3.at<double>(i, 1) = L_6x10.at<double>(i, 1);
+    L_6x3.at<double>(i, 2) = L_6x10.at<double>(i, 2);
   }
 
   // 求解方程组
-  cvSolve(&L_6x3, Rho, &B3, CV_SVD);
+  cv::solve(L_6x3, Rho, B3, cv::DECOMP_SVD);
 
   // 从b11 b12 b22 中恢复 b1 b2
   if (b3[0] < 0) {
@@ -1105,26 +1096,26 @@ void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
  * @param[in]  Rho     非齐次项 \rho, 列向量
  * @param[out] betas   计算得到的beta
  */
-void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
+void PnPsolver::find_betas_approx_3(const cv::Mat& L_6x10, const cv::Mat& Rho,
 			       double * betas)
 {
   // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
   // betas_approx_3 = [B11 B12 B22 B13 B23                    ]
   double l_6x5[6 * 5], b5[5];
-  CvMat L_6x5 = cvMat(6, 5, CV_64F, l_6x5);
-  CvMat B5    = cvMat(5, 1, CV_64F, b5);
+  cv::Mat L_6x5(6, 5, CV_64F, l_6x5);
+  cv::Mat B5(5, 1, CV_64F, b5);
 
   // 获取并构造矩阵
   for(int i = 0; i < 6; i++) {
-    cvmSet(&L_6x5, i, 0, cvmGet(L_6x10, i, 0));
-    cvmSet(&L_6x5, i, 1, cvmGet(L_6x10, i, 1));
-    cvmSet(&L_6x5, i, 2, cvmGet(L_6x10, i, 2));
-    cvmSet(&L_6x5, i, 3, cvmGet(L_6x10, i, 3));
-    cvmSet(&L_6x5, i, 4, cvmGet(L_6x10, i, 4));
+    L_6x5.at<double>(i, 0) = L_6x10.at<double>(i, 0);
+    L_6x5.at<double>(i, 1) = L_6x10.at<double>(i, 1);
+    L_6x5.at<double>(i, 2) = L_6x10.at<double>(i, 2);
+    L_6x5.at<double>(i, 3) = L_6x10.at<double>(i, 3);
+    L_6x5.at<double>(i, 4) = L_6x10.at<double>(i, 4);
   }
 
   // 求解这个方程组
-  cvSolve(&L_6x5, Rho, &B5, CV_SVD);
+  cv::solve(L_6x5, Rho, B5, cv::DECOMP_SVD);
 
   // 从 B11 B12 B22 B13 B23 中恢复出 B1 B2 B3
   if (b5[0] < 0) {
@@ -1231,7 +1222,7 @@ void PnPsolver::compute_rho(double * rho)
  * @param[out] b      计算得到的增量方程中的非齐次项
  */
 void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double * rho,
-					double betas[4], CvMat * A, CvMat * b)
+					double betas[4], cv::Mat& A, cv::Mat& b)
 {
   // 以下推导就是求解一阶雅克比矩阵
 
@@ -1303,7 +1294,7 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
   for(int i = 0; i < 6; i++) {
     // 获得矩阵L中的行指针
     const double * rowL = l_6x10 + i * 10;
-    double * rowA = A->data.db + i * 4;
+    double * rowA = A.ptr<double>(i);
 
     // Step 1: 计算当前行的雅克比
     rowA[0] = 2 * rowL[0] * betas[0] +     rowL[1] * betas[1] +     rowL[3] * betas[2] +     rowL[6] * betas[3];
@@ -1312,7 +1303,7 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
     rowA[3] =     rowL[6] * betas[0] +     rowL[7] * betas[1] +     rowL[8] * betas[2] + 2 * rowL[9] * betas[3];
 
     // Step 2: 计算当前行的非齐次项
-    cvmSet(b, i, 0, rho[i] -
+    b.at<double>(i, 0) = rho[i] -
 	   (                                    // 从0开始的下标 | 从1开始的下标
 	    rowL[0] * betas[0] * betas[0] +     //b00 b11
 	    rowL[1] * betas[0] * betas[1] +     //b01 b12
@@ -1324,7 +1315,7 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
 	    rowL[7] * betas[1] * betas[3] +     //b13 b24
 	    rowL[8] * betas[2] * betas[3] +     //b23 b34
 	    rowL[9] * betas[3] * betas[3]       //b33 b44
-	    ));
+	    );
   }
 }
 
@@ -1336,7 +1327,7 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
  * @param[in] Rho 
  * @param[in] betas 
  */
-void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
+void PnPsolver::gauss_newton(const cv::Mat& L_6x10, const cv::Mat& Rho,
 			double betas[4])
 {
   // 只进行5次迭代
@@ -1354,17 +1345,17 @@ void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
    * 然后分别对应为程序代码中的系数矩阵A和非齐次项B.
    */
   double a[6*4], b[6], x[4];
-  CvMat A = cvMat(6, 4, CV_64F, a);   // 系数矩阵
-  CvMat B = cvMat(6, 1, CV_64F, b);   // 非齐次项
-  CvMat X = cvMat(4, 1, CV_64F, x);   // 增量，待求量
+  cv::Mat A(6, 4, CV_64F, a);   // 系数矩阵
+  cv::Mat B(6, 1, CV_64F, b);   // 非齐次项
+  cv::Mat X(4, 1, CV_64F, x);   // 增量，待求量
 
   // 对于每次迭代过程
   for(int k = 0; k < iterations_number; k++) {
     // 计算增量方程的系数矩阵和非齐次项
-    compute_A_and_b_gauss_newton(L_6x10->data.db, Rho->data.db,
-				 betas, &A, &B);
+    compute_A_and_b_gauss_newton(L_6x10.ptr<double>(), Rho.ptr<double>(),
+				 betas, A, B);
     // 使用QR分解来求解增量方程,解得当前次迭代的增量X
-    qr_solve(&A, &B, &X);
+    qr_solve(A, B, X);
 
     // 应用增量,对估计值进行更新;估计值是beta1~beta4组成的向量
     for(int i = 0; i < 4; i++)
@@ -1378,13 +1369,13 @@ void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
  * @param[in]  b   非齐次项
  * @param[out] X   增量
  */
-void PnPsolver::qr_solve(CvMat * A, CvMat * b, CvMat * X)
+void PnPsolver::qr_solve(cv::Mat& A, cv::Mat& b, cv::Mat& X)
 {
   static int max_nr = 0;        
   static double * A1, * A2;     
 
-  const int nr = A->rows;       // 系数矩阵A的行数
-  const int nc = A->cols;       // 系数矩阵A的列数
+  const int nr = A.rows;       // 系数矩阵A的行数
+  const int nc = A.cols;       // 系数矩阵A的列数
 
   // 判断是否需要重新分配A1 A2的内存区域
   if (max_nr != 0 && max_nr < nr) 
@@ -1400,7 +1391,7 @@ void PnPsolver::qr_solve(CvMat * A, CvMat * b, CvMat * X)
     A2 = new double[nr];
   }
 
-  double * pA = A->data.db,     // 指向系数矩阵A的数据区
+  double * pA = A.ptr<double>(),     // 指向系数矩阵A的数据区
          * ppAkk = pA;          // 一直都会指向对角线上的元素
   // 对系数矩阵的列展开遍历
   for(int k = 0; k < nc; k++) 
@@ -1474,7 +1465,7 @@ void PnPsolver::qr_solve(CvMat * A, CvMat * b, CvMat * X)
   }
 
   // b <- Qt b
-  double * ppAjj = pA, * pb = b->data.db;
+  double * ppAjj = pA, * pb = b.ptr<double>();
   // 对于每一列展开计算
   for(int j = 0; j < nc; j++) 
   {
@@ -1498,7 +1489,7 @@ void PnPsolver::qr_solve(CvMat * A, CvMat * b, CvMat * X)
 
   // X = R-1 b
   // backward method
-  double * pX = X->data.db;
+  double * pX = X.ptr<double>();
   pX[nc - 1] = pb[nc - 1] / A2[nc - 1];
   for(int i = nc - 2; i >= 0; i--) 
   {

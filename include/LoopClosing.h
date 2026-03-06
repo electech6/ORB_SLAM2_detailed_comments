@@ -61,7 +61,7 @@ public:
     typedef map<KeyFrame*,                  //键
                 g2o::Sim3,                  //值
                 std::less<KeyFrame*>,       //排序算法
-                Eigen::aligned_allocator<std::pair<const KeyFrame*, g2o::Sim3> > // 指定分配器,和内存空间开辟有关. 为了能够使用Eigen库中的SSE和AVX指令集加速,需要将传统STL容器中的数据进行对齐处理
+                Eigen::aligned_allocator<std::pair<KeyFrame* const, g2o::Sim3> > // 指定分配器,和内存空间开辟有关. 为了能够使用Eigen库中的SSE和AVX指令集加速,需要将传统STL容器中的数据进行对齐处理
                 > KeyFrameAndPose;
 
 public:

@@ -92,7 +92,7 @@ int main(int argc, char **argv)
     {
         // Read image from file
         // step 4.1 读根据前面获得的图像文件名读取图像,读取过程中不改变图像的格式 
-        im = cv::imread(vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
+        im = cv::imread(vstrImageFilenames[ni],cv::IMREAD_UNCHANGED);
         double tframe = vTimestamps[ni];
 
         // step 4.2 图像的合法性检查

@@ -311,7 +311,7 @@ cv::Mat Sim3Solver::find(vector<bool> &vbInliers12, int &nInliers)
 void Sim3Solver::ComputeCentroid(cv::Mat &P, cv::Mat &Pr, cv::Mat &C)
 {
     // 矩阵P每一行求和，结果存在C。这两句也可以使用CV_REDUCE_AVG选项来实现
-    cv::reduce(P,C,1,CV_REDUCE_SUM);
+    cv::reduce(P,C,1,cv::REDUCE_SUM);
     C = C/P.cols;// 求平均
 
     for(int i=0; i<P.cols; i++)
