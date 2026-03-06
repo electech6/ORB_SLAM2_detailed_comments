@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gdb: mono_tum (Debug build)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/Examples/Monocular/mono_tum",
+            "args": [
+                "${workspaceFolder}/Vocabulary/ORBvoc.txt",
+                "${workspaceFolder}/Examples/Monocular/TUM1.yaml",
+                "${workspaceFolder}/datasets/TUM/testing_and_debugging/rgbd_dataset_freiburg1_xyz"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/lib:${workspaceFolder}/Thirdparty/DBoW2/lib:${workspaceFolder}/Thirdparty/g2o/lib:${env:LD_LIBRARY_PATH}"
+                }
+            ],
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "cmake: build (Debug)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
+

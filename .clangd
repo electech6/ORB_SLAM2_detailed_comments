@@ -1,0 +1,36 @@
+CompileFlags:
+  Add: [
+    -std=c++17,
+    -m64,
+    -D__x86_64__,
+    -D__LP64__,
+    -stdlib=libstdc++,
+    # C++ Standard Library
+    -I/usr/include/c++/11,
+    -I/usr/include/x86_64-linux-gnu/c++/11,
+    -I/usr/include/x86_64-linux-gnu,
+    -I/usr/lib/gcc/x86_64-linux-gnu/11/include,
+    -I/usr/include,
+    # Project source directories
+    -I/SDB-8T/mck/ORB_SLAM2_detailed_comments,
+    -I/SDB-8T/mck/ORB_SLAM2_detailed_comments/include,
+    # Third-party libraries
+    -I/SDB-8T/mck/ORB_SLAM2_detailed_comments/Thirdparty/DBoW2/DBoW2,
+    -I/SDB-8T/mck/ORB_SLAM2_detailed_comments/Thirdparty/DBoW2/DUtils,
+    -I/SDB-8T/mck/ORB_SLAM2_detailed_comments/Thirdparty/g2o,
+    # Eigen3
+    -I/usr/include/eigen3,
+    # OpenCV 4.x
+    -I/usr/include/opencv4,
+    -I/usr/include/opencv4/opencv2,
+    # Pangolin
+    -I/usr/local/include/pangolin,
+    -I/usr/local/include,
+    # External dependencies (from existing config)
+    -I/data_SSD2/mck/mowerpack_all/vslam,
+    -I/data_SSD2/mck/mowerpack_all/vslam/src/jarvis,
+    -I/data_SSD2/mck/mowerpack_all/vslam/src/jarvis_pic,
+  ]
+  Remove: [
+    -W*,  # Remove warnings that may cause issues with clangd
+  ]
