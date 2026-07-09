@@ -81,7 +81,7 @@ System::System(const string &strVocFile,					//词典文件路径
     if(!bVocLoad)
     {
         cerr << "Wrong path to vocabulary. " << endl;
-        cerr << "Falied to open at: " << strVocFile << endl;
+        cerr << "Failed to open at: " << strVocFile << endl;
         //然后退出
         exit(-1);
     }
